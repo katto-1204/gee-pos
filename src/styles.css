@@ -25,11 +25,12 @@
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-width: 320px; min-height: 100%; }
 body { min-height: 100vh; background: radial-gradient(circle at 73% -15%, rgba(105,25,31,.2), transparent 29%), #0a0a0b; }
+html, body { overflow-x: hidden; }
 button, input, textarea { font: inherit; }
 button { border: 0; cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 
-.app-shell { min-height: 100vh; display: grid; grid-template-columns: 118px minmax(620px, 1fr) 384px; position: relative; overflow: hidden; background: linear-gradient(125deg, #0b0b0c 0%, #101113 47%, #0d0e10 100%); }
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: 118px minmax(620px, 1fr) 384px; position: relative; overflow-x: clip; background: linear-gradient(125deg, #0b0b0c 0%, #101113 47%, #0d0e10 100%); }
 .app-shell::before, .app-shell::after { content: ''; position: fixed; pointer-events: none; z-index: 0; }
 .app-shell::before { inset: 0 auto auto 0; width: 345px; height: 210px; opacity: .65; background: linear-gradient(145deg, rgba(239,27,45,.9) 0 4%, transparent 4% 17%, rgba(177,17,30,.75) 17% 20%, transparent 20%); clip-path: polygon(0 0, 100% 0, 50% 40%, 0 84%); }
 .app-shell::after { right: 0; bottom: 0; width: 500px; height: 260px; opacity: .55; background: linear-gradient(145deg, transparent 0 40%, rgba(239,27,45,.85) 40% 44%, transparent 44% 53%, rgba(155,16,26,.7) 53% 56%, transparent 56%); clip-path: polygon(28% 100%, 100% 0, 100% 100%); }
@@ -263,8 +264,8 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .stock-badge.low { color: var(--gold); }
 .card-edit { position: absolute; right: 8px; top: 7px; color: #88898e; background: transparent; padding: 3px; }
 .card-edit:hover { color: var(--red); }
-.add-product-button { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 3px; align-items: center; color: #fff; background: rgba(239,27,45,.16); border: 1px solid rgba(239,27,45,.4); padding: 4px 6px; border-radius: 4px; font-size: 9px; }
-.add-product-button:hover { background: var(--red); }
+.admin-product-card { cursor: pointer; }
+.admin-product-card:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 .order-summary-strip, .customer-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
 .summary-pill { display: flex; flex-direction: column; gap: 6px; padding: 15px 17px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.035); }
 .summary-pill span { color: #7c7d83; text-transform: uppercase; font-size: 9px; letter-spacing: .1em; }
@@ -436,4 +437,31 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .add-product-button { bottom: 10px; }
 @media (max-width: 720px) {
   .checkout-panel { height: 100dvh; max-height: 100dvh; }
+}
+
+@media (max-width: 720px) {
+  .app-shell { overflow-x: hidden; }
+  .primary-nav { min-width: 0; }
+  .nav-item { flex: 0 1 38px; }
+  .crumbs { min-width: 0; }
+  .crumbs span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .filter-pills { max-width: calc(100% - 42px); overflow-x: auto; }
+  .inventory-panel .stock-list { max-height: none; }
+  .checkout-panel { width: 100vw; }
+}
+
+@media (max-width: 370px) {
+  .sidebar { padding-left: 8px; padding-right: 8px; }
+  .brand-lockup { width: 74px; transform: scale(.58); }
+  .primary-nav { gap: 1px; }
+  .nav-item { width: 34px; flex-basis: 34px; }
+  .nav-item.active::after { left: 8px; }
+  .topbar { padding-left: 12px; padding-right: 12px; }
+  .page-content { padding-left: 12px; padding-right: 12px; }
+  .quick-stat { padding-left: 7px; }
+  .quick-stat span { font-size: 8px; }
+  .quick-stat strong { font-size: 18px; }
+  .product-grid { gap: 6px; }
+  .product-card-copy, .product-card-meta { padding-left: 7px; padding-right: 7px; }
+  .product-card-copy h4 { font-size: 9px; }
 }
