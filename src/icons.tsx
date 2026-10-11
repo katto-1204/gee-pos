@@ -1,0 +1,36 @@
+import type { ReactNode, SVGProps } from 'react'
+
+type IconProps = SVGProps<SVGSVGElement> & { size?: number }
+const makeIcon = (path: ReactNode) => ({ size = 20, ...props }: IconProps) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>{path}</svg>
+
+export const HomeIcon = makeIcon(<><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/><path d="M9 20v-6h6v6"/></>)
+export const PackageIcon = makeIcon(<><path d="m21 8-9-5-9 5 9 5 9-5Z"/><path d="M3 8v9l9 5 9-5V8"/><path d="M12 13v9"/></>)
+export const ReceiptIcon = makeIcon(<><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z"/><path d="M8 8h8M8 12h8M8 16h5"/></>)
+export const UsersIcon = makeIcon(<><path d="M16 20v-1.5a4.5 4.5 0 0 0-4.5-4.5h-3A4.5 4.5 0 0 0 4 18.5V20"/><circle cx="10" cy="7" r="3.5"/><path d="M16.5 11a3 3 0 1 0-1.1-5.8M19.5 20v-1.4a4.4 4.4 0 0 0-3-4.2"/></>)
+export const ChartIcon = makeIcon(<><path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/><path d="M18 6h-3M18 6v3"/></>)
+export const SettingsIcon = makeIcon(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2 2-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.2h-2.8v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-2-2 .1-.1A1.7 1.7 0 0 0 7.4 15a1.7 1.7 0 0 0-1.5-1H5.7v-2.8h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L7 8.2l2-2 .1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5v-.2h2.8v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 2 2-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.2V14h-.2a1.7 1.7 0 0 0-1.5 1Z"/></>)
+export const SearchIcon = makeIcon(<><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></>)
+export const PlusIcon = makeIcon(<><path d="M12 5v14M5 12h14"/></>)
+export const MinusIcon = makeIcon(<><path d="M5 12h14"/></>)
+export const XIcon = makeIcon(<><path d="m6 6 12 12M18 6 6 18"/></>)
+export const ChevronDownIcon = makeIcon(<><path d="m6 9 6 6 6-6"/></>)
+export const ArrowRightIcon = makeIcon(<><path d="M5 12h14M13 6l6 6-6 6"/></>)
+export const ArrowUpIcon = makeIcon(<><path d="m6 15 6-6 6 6"/></>)
+export const MoreIcon = makeIcon(<><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></>)
+export const PrinterIcon = makeIcon(<><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></>)
+export const SendIcon = makeIcon(<><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></>)
+export const CreditCardIcon = makeIcon(<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h3"/></>)
+export const BanknoteIcon = makeIcon(<><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9h.01M18 15h.01"/></>)
+export const ScanIcon = makeIcon(<><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8h10v8H7zM10 8v8M14 8v8"/></>)
+export const UserPlusIcon = makeIcon(<><circle cx="9" cy="8" r="3"/><path d="M3 20v-1.4A4.6 4.6 0 0 1 7.6 14h2.8A4.6 4.6 0 0 1 15 18.6V20M19 8v6M16 11h6"/></>)
+export const CheckIcon = makeIcon(<><path d="m5 12 4 4L19 6"/></>)
+export const CloseIcon = XIcon
+export const LogOutIcon = makeIcon(<><path d="M10 17l5-5-5-5M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-6"/></>)
+export const MenuIcon = makeIcon(<><path d="M4 6h16M4 12h16M4 18h16"/></>)
+export const FilterIcon = makeIcon(<><path d="M4 6h16M7 12h10M10 18h4"/></>)
+export const DownloadIcon = makeIcon(<><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></>)
+export const EditIcon = makeIcon(<><path d="m4 16-.8 4.8L8 20l11.6-11.6a2.8 2.8 0 0 0-4-4L4 16Z"/><path d="m14 6 4 4"/></>)
+export const TrashIcon = makeIcon(<><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/></>)
+export const SparkIcon = makeIcon(<><path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5L12 2Z"/></>)
+export const WalletIcon = makeIcon(<><path d="M4 5h16v14H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M16 12h4M5 5V3h12a2 2 0 0 1 2 2"/></>)
+export const ClipboardIcon = makeIcon(<><path d="M8 4h8M9 3h6v3H9z"/><path d="M7 5H5v16h14V5h-2M8 11h8M8 15h6"/></>)
