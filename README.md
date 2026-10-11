@@ -50,6 +50,32 @@ npm run build
 npm run preview
 ```
 
+## Deploy to Vercel
+
+This is a static Vite app and is configured for zero-configuration Vercel deployment.
+
+### Git-based deployment
+
+1. Push the repository to GitHub, GitLab, or Bitbucket.
+2. Import the repository in Vercel.
+3. Keep the detected Vite settings, or use:
+   - **Install command:** `npm install`
+   - **Build command:** `npm run build`
+   - **Output directory:** `dist`
+4. Deploy.
+
+The included [`vercel.json`](./vercel.json) makes those settings explicit and prevents stale service-worker scripts from being cached between deployments.
+
+### CLI deployment
+
+```bash
+npm install -g vercel
+vercel
+vercel --prod
+```
+
+No environment variables or backend services are required. POS data remains local to each browser through `localStorage`.
+
 ## Project structure
 
 ```text

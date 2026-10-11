@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gee-pos-shell-v1'
+const CACHE_NAME = 'gee-pos-shell-v2'
 const APP_SHELL = ['/', '/manifest.webmanifest', '/icons/gee-pos-icon-192.png', '/icons/gee-pos-icon-512.png']
 
 self.addEventListener('install', (event) => {
@@ -13,11 +13,21 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-    if (event.request.url.startsWith(self.location.origin)) {
-      const copy = response.clone()
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
-    }
-    return response
-  }).catch(() => caches.match('/'))))
+  const requestUrl = new URL(event.request.url)
+  const isAppNavigation = event.request.mode === 'navigate'
+  const isSameOrigin = requestUrl.origin === self.location.origin
+
+  if (!isSameOrigin) return
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone()
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+        }
+        return response
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || (isAppNavigation ? caches.match('/') : Response.error()))),
+  )
 })
