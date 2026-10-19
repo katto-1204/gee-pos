@@ -65,6 +65,14 @@ export const CATEGORY_LABELS: Record<ProductCategory | 'all', string> = {
   bandanas: 'Bandanas',
 }
 
+// New designs start without sellable stock until their quantities are entered.
+export const additionalBandanas: Product[] = [
+  { id: 'p-bdwv06', sku: 'GG-BDWV06', name: 'Wolves Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 0, accent: '#ed1b29', accent2: '#190c13', description: 'Black and scarlet bandana with the Wolves design.' },
+  { id: 'p-bdfx07', sku: 'GG-BDFX07', name: 'Fox Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 0, accent: '#090a0d', accent2: '#c41827', description: 'Black bandana with the Fox design.' },
+  { id: 'p-bdpn08', sku: 'GG-BDPN08', name: 'Panthers Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 0, accent: '#f11c84', accent2: '#fff1f8', description: 'Pink bandana with the Panthers design.' },
+  { id: 'p-bdph09', sku: 'GG-BDPH09', name: 'Phoenix Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 0, accent: '#1c64a8', accent2: '#d9f0ff', description: 'Royal blue bandana with the Phoenix design.' },
+]
+
 export const seedProducts: Product[] = [
   { id: 'p-gl01', sku: 'GG-GL01', name: 'Golden Lions Shirt', category: 'shirts', kind: 'shirt', price: 650, stock: 24, accent: '#f5c500', accent2: '#171b11', featured: true, description: 'Heavyweight performance jersey with a gold crest.' },
   { id: 'p-st02', sku: 'GG-ST02', name: 'Stallions Shirt', category: 'shirts', kind: 'shirt', price: 650, stock: 18, accent: '#15825b', accent2: '#081c18', featured: true, description: 'Emerald mesh jersey with a classic racing stripe.' },
@@ -80,6 +88,7 @@ export const seedProducts: Product[] = [
   { id: 'p-bdb03', sku: 'GG-BDBD03', name: 'Bulldogs Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 26, accent: '#e8ebee', accent2: '#1a4caa', featured: true, description: 'White, red and blue sport bandana.' },
   { id: 'p-bdeg04', sku: 'GG-BDEG04', name: 'Eagles Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 25, accent: '#e6e7eb', accent2: '#25262b', featured: true, description: 'Monochrome bandana with a graphite border.' },
   { id: 'p-bdtg05', sku: 'GG-BDTG05', name: 'Tigers Bandana', category: 'bandanas', kind: 'bandana', price: 650, stock: 24, accent: '#f26a11', accent2: '#35110a', featured: true, description: 'Orange bandana with the Tigers crest.' },
+  ...additionalBandanas,
 ]
 
 export const seedCustomers: Customer[] = []

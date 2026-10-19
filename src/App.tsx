@@ -9,7 +9,7 @@ import {
 } from './icons'
 import {
   CATEGORY_LABELS, dateOnly, dateTime, defaultSettings, money, seedCustomers, seedOrders, seedPaymentMethods,
-  seedProducts,
+  seedProducts, additionalBandanas,
 } from './data'
 import type { CartLine, Customer, OnlinePaymentDetails, Order, PaymentMethod, Product, ProductCategory, ProductKind, Settings } from './data'
 
@@ -79,7 +79,8 @@ function App() {
   useEffect(() => {
     const cleanCatalog = products.filter((product) => product.category === 'shirts' || product.category === 'bandanas').map((product) => ({ ...product, price: 650 }))
     const changed = cleanCatalog.length !== products.length || cleanCatalog.some((product, index) => product.price !== products[index]?.price || product.id !== products[index]?.id)
-    if (changed) setProducts(cleanCatalog)
+    const missingBandanas = additionalBandanas.filter((seed) => !cleanCatalog.some((product) => product.id === seed.id || product.sku === seed.sku))
+    if (changed || missingBandanas.length) setProducts([...cleanCatalog, ...missingBandanas])
   }, [products, setProducts])
 
   useEffect(() => {
@@ -276,7 +277,6 @@ function DashboardPage({ products, allProducts, category, setCategory, search, s
     { id: 'shirts', label: 'Shirts', kind: 'shirt', visual: 'shirt' },
     { id: 'bandanas', label: 'Bandanas', kind: 'bandana', visual: 'bandana' },
   ]
-  const visible = category === 'all' ? products : products
   const sections = category === 'all' ? (['shirts', 'bandanas'] as ProductCategory[]) : [category]
   return <div className="page-content dashboard-page">
     <div className="welcome-row">
@@ -288,9 +288,9 @@ function DashboardPage({ products, allProducts, category, setCategory, search, s
       <div className="category-strip">{categories.map((item) => <button key={item.id} className={cx('category-card', category === item.id && 'selected')} onClick={() => setCategory(item.id)}><div className="category-visual"><ProductArt kind={item.kind} accent={item.id === 'all' ? '#f4f3f4' : allProducts.find((product) => product.category === item.id)?.accent ?? '#ed1d2d'} accent2={item.id === 'all' ? '#ed1d2d' : allProducts.find((product) => product.category === item.id)?.accent2 ?? '#121318'} small={item.id === 'all'} /></div><span>{item.label}</span>{category === item.id && <i className="category-active-dot" />}</button>)}</div>
     </div>
     <div className="catalog-sections">{sections.map((section) => {
-      const sectionProducts = visible.filter((product) => product.category === section)
+      const sectionProducts = products.filter((product) => product.category === section)
       if (!sectionProducts.length) return null
-      return <section className="catalog-section" key={section}><div className="section-heading"><div><h3>{CATEGORY_LABELS[section]}</h3><span>{sectionProducts.length} items · ready to sell</span></div><button onClick={() => { setCategory(section); goTo('products') }}>View all <ArrowRightIcon size={16} /></button></div><div className="product-grid">{sectionProducts.slice(0, section === 'shirts' ? sectionProducts.length : 5).map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>
+      return <section className="catalog-section" key={section}><div className="section-heading"><div><h3>{CATEGORY_LABELS[section]}</h3><span>{sectionProducts.length} items · ready to sell</span></div><button onClick={() => { setCategory(section); goTo('products') }}>View all <ArrowRightIcon size={16} /></button></div><div className="product-grid">{sectionProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} />)}</div></section>
     })}</div>
   </div>
 }
@@ -379,7 +379,18 @@ function PaymentBar({ label, value, total, color, icon }: { label: string; value
 
 function ToggleRow({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) { return <div className="toggle-row"><div><strong>{label}</strong><p>{description}</p></div><button className={cx('toggle', value && 'on')} onClick={() => onChange(!value)} aria-label={`Toggle ${label}`}><i /></button></div> }
 
-function ReceiptModal({ order, settings, onClose }: { order: Order; settings: Settings; onClose: () => void }) { return <div className="modal-backdrop"><div className="receipt-modal"><div className="success-ring"><CheckIcon size={27} /></div><span className="eyebrow">Payment captured</span><h2>Nice work<span className="red-dot">.</span></h2><p>Sale {order.number} is complete and saved on this device.</p><div className="receipt-total"><span>Total charged</span><strong>{money(order.total)}</strong><PaymentBadge method={order.paymentMethod} />{order.onlinePayment && <small className="receipt-payment-detail">{order.onlinePayment.provider} · {order.onlinePayment.referenceNumber || "receipt attached"} · {order.onlinePayment.accountName}</small>}</div><div className="receipt-lines">{order.items.map((item) => <div key={item.productId}><span>{item.quantity} × {item.productName}</span><strong>{money(item.price * item.quantity)}</strong></div>)}</div><p className="receipt-footer">{settings.receiptFooter}</p><div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => window.print()}><PrinterIcon size={16} /> Print receipt</button></div></div></div> }
+function ReceiptModal({ order, settings, onClose }: { order: Order; settings: Settings; onClose: () => void }) {
+  return <div className="modal-backdrop receipt-backdrop"><div className="receipt-modal" role="dialog" aria-modal="true" aria-label={`Receipt ${order.number}`}>
+    <div className="receipt-success"><div className="success-ring"><CheckIcon size={27} /></div><span className="eyebrow">Payment captured</span><h2>Nice work<span className="red-dot">.</span></h2></div>
+    <h3 className="receipt-store">{settings.storeName}</h3>
+    <p>Sale {order.number}<br /><time dateTime={order.createdAt}>{new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(order.createdAt))}</time>{order.customerName && <><br />Customer: {order.customerName}</>}</p>
+    <div className="receipt-lines">{order.items.map((item) => <div key={item.productId}><span>{item.quantity} × {item.productName}<small>{item.sku} · {money(item.price)} each</small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
+    <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
+    <div className="receipt-total"><span>Total charged</span><strong>{money(order.total)}</strong><PaymentBadge method={order.paymentMethod} />{order.onlinePayment && <small className="receipt-payment-detail">{order.onlinePayment.provider} · {order.onlinePayment.referenceNumber || 'receipt attached'} · {order.onlinePayment.accountName}</small>}</div>
+    <p className="receipt-footer">{settings.receiptFooter}</p>
+    <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => window.print()}><PrinterIcon size={16} /> Print receipt</button></div>
+  </div></div>
+}
 
 function CustomerModal({ newCustomer, setNewCustomer, onClose, onSubmit }: { newCustomer: { name: string; email: string; phone: string }; setNewCustomer: (value: { name: string; email: string; phone: string }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <div className="modal-backdrop"><form className="form-modal" onSubmit={onSubmit}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Add to the crew</span><h2>New customer<span className="red-dot">.</span></h2><p>Keep the relationship local, keep the checkout moving.</p><label className="field-label">Name<input autoFocus required value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} placeholder="Full name" /></label><label className="field-label">Email<input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })} placeholder="name@example.com" /></label><label className="field-label">Phone<input value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} placeholder="(555) 000-0000" /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><UserPlusIcon size={16} /> Save customer</button></div></form></div> }
 
