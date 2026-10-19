@@ -53,7 +53,19 @@ Publication result: pushed implementation commit `0db4625` to the original repos
 
 ## Print controls follow-up
 
-- [ ] Reproduce each print entry point and identify missing behavior.
-- [ ] Connect broken print controls while preserving sale/cart/inventory data.
-- [ ] Verify affected flows, print layout, console/network health, existing Playwright suite and build.
-- [ ] Document confirmed cause and hardware/browser verification limits.
+- [x] Reproduce each print entry point and identify missing behavior.
+- [x] Connect the current-sale print control while preserving sale/cart/inventory data.
+- [x] Redesign the receipt preview and paper layout; remove the dark root background from print output.
+- [x] Verify affected flows, print layout, console/network health, existing Playwright suite and build.
+- [x] Document confirmed cause and hardware/browser verification limits.
+
+Scope updated after the supplied receipt screenshot: prioritize receipt design and receipt printing. The separate Reports print control is outside this receipt change.
+
+### Receipt redesign review
+
+- Reproduced the black print background before editing: computed print `html` background was `rgb(10, 10, 11)`. The `:root` dark background beat the old `html` print selector. Explicitly reset the root and paper backgrounds to white.
+- Replaced the oversized dark modal receipt styling with a white paper preview, Gee Graphics wordmark, sale/date/time metadata, aligned item amounts, quantity/unit-price/SKU details, subtotal/tax, a clear total, payment method/provider/reference and footer. Preserved the configured store name/footer and order data.
+- Connected the previously inert cart printer icon to an explicitly unpaid preview. Empty carts show feedback. Preview/printing does not charge the customer, clear the cart or decrement inventory.
+- `npm run build`: passed. `npx playwright test --workers=2`: 12 passed. Checked desktop and 390/360px receipt previews, cash/online checkouts, 44-item receipts, print invocation, unpaid preview data preservation, catalog regressions, application console/network health. Google Fonts used the test system-font fallback.
+- Exported and inspected the actual PDFs: the two-item receipt fits one A4 page; both 44-item cash/online receipts paginate over four pages with every item, totals and footer present. Rendered the standard receipt and online final page for visual inspection. Verified unused paper below every footer is white, including with background printing enabled.
+- Physical printers and native driver settings were not tested. Browser-added headers/footers are controlled by the user's print dialog. Deployment was not verified.

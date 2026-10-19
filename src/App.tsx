@@ -15,6 +15,7 @@ import type { CartLine, Customer, OnlinePaymentDetails, Order, PaymentMethod, Pr
 
 type Page = 'home' | 'products' | 'orders' | 'customers' | 'reports' | 'settings'
 type CategoryFilter = ProductCategory | 'all'
+type Receipt = Order & { isDraft?: boolean }
 
 const STORAGE = {
   products: 'gg-products-v2',
@@ -66,7 +67,7 @@ function App() {
   const [payment, setPayment] = useState<PaymentMethod>('Cash')
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [toast, setToast] = useState<string>('')
-  const [receipt, setReceipt] = useState<Order | null>(null)
+  const [receipt, setReceipt] = useState<Receipt | null>(null)
   const [mobileCartOpen, setMobileCartOpen] = useState(false)
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
@@ -148,6 +149,20 @@ function App() {
   }
 
   const removeFromCart = (productId: string) => setCart((current) => current.filter((line) => line.productId !== productId))
+
+  const previewReceipt = () => {
+    if (!cartDetails.length) {
+      notify('Add an item before printing the current sale')
+      return
+    }
+    setReceipt({
+      id: 'current-sale', number: 'Current sale', createdAt: new Date().toISOString(), isDraft: true,
+      items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price })),
+      subtotal, tax, total, paymentMethod: payment,
+      onlinePayment: payment === 'Online' ? onlinePayment : undefined,
+      customerName: selectedCustomer?.name,
+    })
+  }
 
   const chargeCustomer = () => {
     if (!cartDetails.length) {
@@ -260,7 +275,7 @@ function App() {
 
     {(page === 'home' || page === 'products') && <>
       <button className="mobile-cart-fab" onClick={() => setMobileCartOpen(true)}><ReceiptIcon size={20} /><span>{cart.length}</span><b>{money(total)}</b></button>
-      <CartPanel cartDetails={cartDetails} subtotal={subtotal} tax={tax} total={total} payment={payment} onChooseCash={() => setPayment('Cash')} onChooseOnline={() => { setPayment('Online'); setShowOnlinePayment(true) }} onlinePayment={onlinePayment} customer={selectedCustomer} customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId} customerPickerOpen={customerPickerOpen} setCustomerPickerOpen={setCustomerPickerOpen} customerSearch={customerSearch} setCustomerSearch={setCustomerSearch} onAddCustomer={() => setShowCustomerForm(true)} updateQuantity={updateQuantity} removeFromCart={removeFromCart} chargeCustomer={chargeCustomer} mobileOpen={mobileCartOpen} setMobileOpen={setMobileCartOpen} />
+      <CartPanel cartDetails={cartDetails} subtotal={subtotal} tax={tax} total={total} payment={payment} onChooseCash={() => setPayment('Cash')} onChooseOnline={() => { setPayment('Online'); setShowOnlinePayment(true) }} onlinePayment={onlinePayment} customer={selectedCustomer} customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId} customerPickerOpen={customerPickerOpen} setCustomerPickerOpen={setCustomerPickerOpen} customerSearch={customerSearch} setCustomerSearch={setCustomerSearch} onAddCustomer={() => setShowCustomerForm(true)} updateQuantity={updateQuantity} removeFromCart={removeFromCart} chargeCustomer={chargeCustomer} previewReceipt={previewReceipt} mobileOpen={mobileCartOpen} setMobileOpen={setMobileCartOpen} />
     </>}
 
     {toast && <div className="toast"><span className="toast-icon"><CheckIcon size={16} /></span>{toast}</div>}
@@ -340,12 +355,12 @@ function ProductArt({ kind, accent, accent2, small = false, tiny = false }: { ki
   return <div className={cx('product-art', 'shirt-art', kind === 'set' && 'set-art', tiny && 'tiny-art')} style={style}><div className="shirt-back" /><div className="shirt-body"><i className="shirt-sleeve left" /><i className="shirt-sleeve right" /><div className="shirt-neck" /><span>{kind === 'set' ? 'SET' : '88'}</span></div>{kind === 'set' && <div className="mini-bandana" />}</div>
 }
 
-function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number) => void; removeFromCart: (id: string) => void; chargeCustomer: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
+function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, previewReceipt, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number) => void; removeFromCart: (id: string) => void; chargeCustomer: () => void; previewReceipt: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
   const customerResults = customers.filter((item) => item.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 4)
   return <aside className={cx('checkout-panel', mobileOpen && 'mobile-open')}>
     <div className="checkout-header">
       <div><span className="tab-kicker">Tab #1</span><h2>Current sale</h2></div>
-      <div className="checkout-actions"><button title="Send receipt"><SendIcon size={17} /></button><button title="Print receipt"><PrinterIcon size={17} /></button><button className="close-cart" onClick={() => setMobileOpen(false)}><XIcon size={20} /></button></div>
+      <div className="checkout-actions"><button title="Send receipt"><SendIcon size={17} /></button><button title="Print receipt" onClick={previewReceipt}><PrinterIcon size={17} /></button><button className="close-cart" onClick={() => setMobileOpen(false)}><XIcon size={20} /></button></div>
     </div>
     <div className="customer-select-wrap">
       <button className="customer-select" onClick={() => setCustomerPickerOpen(!customerPickerOpen)}>
@@ -379,15 +394,29 @@ function PaymentBar({ label, value, total, color, icon }: { label: string; value
 
 function ToggleRow({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) { return <div className="toggle-row"><div><strong>{label}</strong><p>{description}</p></div><button className={cx('toggle', value && 'on')} onClick={() => onChange(!value)} aria-label={`Toggle ${label}`}><i /></button></div> }
 
-function ReceiptModal({ order, settings, onClose }: { order: Order; settings: Settings; onClose: () => void }) {
+function ReceiptModal({ order, settings, onClose }: { order: Receipt; settings: Settings; onClose: () => void }) {
+  const createdAt = new Date(order.createdAt)
+  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
   return <div className="modal-backdrop receipt-backdrop"><div className="receipt-modal" role="dialog" aria-modal="true" aria-label={`Receipt ${order.number}`}>
-    <div className="receipt-success"><div className="success-ring"><CheckIcon size={27} /></div><span className="eyebrow">Payment captured</span><h2>Nice work<span className="red-dot">.</span></h2></div>
-    <h3 className="receipt-store">{settings.storeName}</h3>
-    <p>Sale {order.number}<br /><time dateTime={order.createdAt}>{new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(order.createdAt))}</time>{order.customerName && <><br />Customer: {order.customerName}</>}</p>
-    <div className="receipt-lines">{order.items.map((item) => <div key={item.productId}><span>{item.quantity} × {item.productName}<small>{item.sku} · {money(item.price)} each</small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
-    <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
-    <div className="receipt-total"><span>Total charged</span><strong>{money(order.total)}</strong><PaymentBadge method={order.paymentMethod} />{order.onlinePayment && <small className="receipt-payment-detail">{order.onlinePayment.provider} · {order.onlinePayment.referenceNumber || 'receipt attached'} · {order.onlinePayment.accountName}</small>}</div>
-    <p className="receipt-footer">{settings.receiptFooter}</p>
+    <div className="receipt-success"><span><CheckIcon size={15} /> {order.isDraft ? 'Current sale preview' : 'Sale complete'}</span><button onClick={onClose} aria-label="Close receipt"><XIcon size={18} /></button></div>
+    <article className="receipt-paper">
+      <header className="receipt-heading">
+        <div className="receipt-brand" aria-hidden="true">gee<span>+</span><small>GRAPHICS</small></div>
+        <h3 className="receipt-store">{settings.storeName}</h3>
+        <p className="receipt-label">{order.isDraft ? 'UNPAID · CURRENT SALE' : 'SALES RECEIPT'}</p>
+      </header>
+      <dl className="receipt-meta">
+        <div><dt>{order.isDraft ? 'Status' : 'Receipt no.'}</dt><dd>{order.isDraft ? 'Awaiting payment' : order.number}</dd></div>
+        <div><dt>Date</dt><dd><time dateTime={order.createdAt}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(createdAt)}</time></dd></div>
+        <div><dt>Time</dt><dd>{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(createdAt)}</dd></div>
+        {order.customerName && <div><dt>Customer</dt><dd>{order.customerName}</dd></div>}
+      </dl>
+      <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
+      <div className="receipt-lines">{order.items.map((item) => <div key={item.productId}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)}<span className="receipt-sku">{item.sku}</span></small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
+      <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
+      <div className="receipt-total"><div className="receipt-amount"><span>{order.isDraft ? 'Total due' : 'Total paid'}</span><strong>{money(order.total)}</strong></div>{!order.isDraft && <div className="receipt-payment"><span>Payment method</span><strong>{order.paymentMethod}{order.onlinePayment && ` · ${order.onlinePayment.provider}`}</strong></div>}{!order.isDraft && order.onlinePayment && <small className="receipt-payment-detail">Account: {order.onlinePayment.accountName}<br />Reference: {order.onlinePayment.referenceNumber || 'Receipt photo attached'}</small>}</div>
+      <footer className="receipt-ending"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {order.isDraft ? 'Payment pending' : 'Payment received'}</span><p className="receipt-footer">{settings.receiptFooter}</p><strong>{order.isDraft ? 'UNPAID COPY' : 'THANK YOU FOR SHOPPING WITH US'}</strong></footer>
+    </article>
     <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => window.print()}><PrinterIcon size={16} /> Print receipt</button></div>
   </div></div>
 }
