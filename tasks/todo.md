@@ -43,11 +43,13 @@ The user confirmed all nine designs. Add the four missing products to both fresh
 
 - [x] Verify local repository boundary, remote ownership/access, and current default branch/history.
 - [x] Compare local fixes with the original repository and preserve upstream work.
-- [ ] Commit the reviewed changes, push normally to `https://github.com/katto-1204/gee-pos.git`, and verify the remote commit.
+- [x] Commit the reviewed changes, push normally to `https://github.com/katto-1204/gee-pos.git`, and verify the remote commit.
 
 Prior verification for these changes: build passed and 10 Playwright tests passed.
 
 Publication preparation: initialized Git only inside this project, configured the exact supplied origin, fetched `origin/main` at `8061a93`, and attached local main to that history without changing working files. Reviewed the diff and whitespace checks. Build output, dependencies, browser test output and temporary PDF tools are ignored. Push will be a normal history-preserving update.
+
+Publication result: pushed implementation commit `0db4625` to the original repository's `main` with a normal fast-forward push and verified GitHub's remote tip. Preserved the original React versions in both lockfiles. Build and 10 browser tests passed for the implementation; no deployment or physical-printer verification was performed.
 
 ## Print controls follow-up
 
