@@ -69,3 +69,21 @@ Scope updated after the supplied receipt screenshot: prioritize receipt design a
 - `npm run build`: passed. `npx playwright test --workers=2`: 12 passed. Checked desktop and 390/360px receipt previews, cash/online checkouts, 44-item receipts, print invocation, unpaid preview data preservation, catalog regressions, application console/network health. Google Fonts used the test system-font fallback.
 - Exported and inspected the actual PDFs: the two-item receipt fits one A4 page; both 44-item cash/online receipts paginate over four pages with every item, totals and footer present. Rendered the standard receipt and online final page for visual inspection. Verified unused paper below every footer is white, including with background printing enabled.
 - Physical printers and native driver settings were not tested. Browser-added headers/footers are controlled by the user's print dialog. Deployment was not verified.
+
+## Thermal receipt printing
+
+- [x] Reproduce receipt output on 58mm and 80mm paper and identify overflow/margin problems.
+- [x] Adapt receipt layout to printer paper width with safe thermal margins and readable narrow-paper typography, preserving the existing design and checkout data.
+- [x] Verify 58mm, 80mm and A4 PDF output, long receipts and long names/references, mobile preview, browser console/network health, existing browser suite and production build.
+- [ ] Review the diff, commit, push to the verified original repository and confirm the remote commit.
+
+Browser printing uses the paper configured in the native print dialog; the app cannot silently enumerate or select installed printers. Keep paper selection in that dialog and make the receipt fit its selected printable width.
+
+### Thermal verification review
+
+- Reproduced unreadable total labels on 58mm paper: the large-total label wrapped to 81px high. The new regression checks require a readable single-line label and no horizontal overflow.
+- Changed page margins from 10mm to 5mm and explicitly use the driver's page size. A 58mm roll now has 48mm for receipt content. The print layout uses its actual printable container width to compact branding/spacing and total typography; long payment metadata and totals wrap safely.
+- Added short print-dialog instructions to the receipt preview and README. Printing controls/instructions are excluded from paper output; existing checkout and unpaid-preview persistence are unchanged.
+- Production build passed. All 18 Playwright tests passed, including cash/online receipts, mobile previews and six physical-paper scenarios. After correcting the A4 test export to full 210×297mm, the six thermal/A4 tests passed again. No application console warnings/errors or failed requests; Google Fonts uses the existing test fallback.
+- Inspected actual PDF dimensions and text geometry for 58mm, 80mm and A4. Standard receipts fit one page. The deliberately extreme 18-product / 3,996-unit orders paginate across five 58mm pages, four 80mm pages and three A4 pages at the tested page lengths. All item names, totals, long account/reference details and footer survived; unused paper stayed white. Visually inspected 58mm standard/final pages and the 80mm standard page.
+- Physical thermal printer, roll feed/cutter, printer-specific settings, mobile OS print services and live deployment were not tested. Paper length follows the printer driver's configuration; the app does not invent a roll length or silently select a device.

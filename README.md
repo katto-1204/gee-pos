@@ -97,6 +97,12 @@ No environment variables or backend services are required. POS data remains loca
 └── README.md
 ```
 
+## Receipt printing
+
+Receipts adapt to the paper selected in the browser print dialog, including 58 mm and 80 mm thermal rolls and A4. Print margins are 5 mm; narrow receipts use compact spacing and wrap long details and large totals.
+
+Select your thermal printer and its matching roll width in the print dialog. Use 100% scale and disable headers and footers. Paper length and cutting are controlled by the printer driver. Physical printer output must be checked on the connected device.
+
 ## PWA notes
 
 This app is configured as a standalone web app for installable use:

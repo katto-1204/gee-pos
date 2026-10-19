@@ -386,23 +386,45 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .receipt-ending > strong { display: block; font-size: 8px; letter-spacing: 1.2px; font-weight: 600; }
 .receipt-modal > .modal-actions { margin: 0; padding: 15px 20px; border-top: 1px solid #e7e7e7; background: #f8f9f8; }
 .receipt-modal > .modal-actions .ghost-button { color: #444; border-color: #d5d5d5; background: #fff; }
+.receipt-modal > .receipt-print-hint { margin: 0; padding: 0 20px 15px; color: #606060; font-size: 11px; line-height: 1.5; }
 @media (max-width: 430px) {
   .receipt-paper { padding: 24px 22px; }
   .receipt-modal > .modal-actions { padding: 14px 16px; }
 }
 @media print {
-  @page { margin: 10mm; }
+  /* Use the driver's paper size; five-millimetre edges also fit 48mm print heads on 58mm rolls. */
+  @page { size: auto; margin: 5mm; }
   :root { color-scheme: light; color: #000; background: #fff !important; }
   html, body, #root { min-width: 0; min-height: 0; height: auto; overflow: visible; background: #fff !important; }
   .app-shell { display: block; min-height: 0; overflow: visible; background: #fff; }
   .app-shell > :not(.receipt-backdrop), .app-shell::before, .app-shell::after { display: none !important; }
   .receipt-backdrop { display: block; position: static; padding: 0; background: none; backdrop-filter: none; }
-  .receipt-modal { position: static; width: 100%; max-width: 80mm; max-height: none; overflow: visible; margin: 0 auto; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: #fff; animation: none; }
+  .receipt-modal { position: static; width: 100%; max-width: 80mm; max-height: none; overflow: visible; margin: 0 auto; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: #fff; animation: none; container-type: inline-size; }
   .receipt-modal, .receipt-modal * { color: #000 !important; background: transparent !important; text-shadow: none !important; }
   .receipt-paper { padding: 0; }
-  .receipt-success, .receipt-modal > .modal-actions { display: none !important; }
+  .receipt-success, .receipt-print-hint, .receipt-modal > .modal-actions { display: none !important; }
+  .receipt-meta dd, .receipt-payment > strong { min-width: 0; overflow-wrap: anywhere; }
+  .receipt-amount { flex-wrap: wrap; }
+  .receipt-amount > span, .receipt-payment > span { flex-shrink: 0; }
+  .receipt-total .receipt-amount > strong { min-width: 0; max-width: 100%; margin-left: auto; white-space: normal; overflow-wrap: anywhere; }
+  .receipt-payment > strong { text-align: right; }
   .receipt-heading, .receipt-meta, .receipt-item-heading, .receipt-breakdown, .receipt-total, .receipt-ending { break-inside: avoid; }
   .receipt-lines > div, .receipt-ending, .receipt-item-heading, .receipt-breakdown { border-color: #999; }
+  @container (max-width: 60mm) {
+    .receipt-heading { padding-bottom: 3mm; }
+    .receipt-brand { font-size: 32px; }
+    .receipt-brand > span { font-size: 24px; }
+    .receipt-store { margin-top: 3mm; font-size: 13px; }
+    .receipt-label { letter-spacing: 1px; }
+    .receipt-meta { gap: 1mm; margin: 3mm 0; }
+    .receipt-meta > div, .receipt-lines > div { gap: 2mm; }
+    .receipt-lines > div { padding: 2mm 0; }
+    .receipt-total .receipt-amount > span { font-size: 12px; }
+    .receipt-total .receipt-amount > strong { font-size: 20px; }
+    .receipt-ending { margin-top: 4mm; padding-top: 3mm; }
+    .receipt-footer { margin: 2mm 0; }
+    .receipt-ending > strong { letter-spacing: .5px; }
+  }
 }
 
 

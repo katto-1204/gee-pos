@@ -417,6 +417,7 @@ function ReceiptModal({ order, settings, onClose }: { order: Receipt; settings: 
       <div className="receipt-total"><div className="receipt-amount"><span>{order.isDraft ? 'Total due' : 'Total paid'}</span><strong>{money(order.total)}</strong></div>{!order.isDraft && <div className="receipt-payment"><span>Payment method</span><strong>{order.paymentMethod}{order.onlinePayment && ` · ${order.onlinePayment.provider}`}</strong></div>}{!order.isDraft && order.onlinePayment && <small className="receipt-payment-detail">Account: {order.onlinePayment.accountName}<br />Reference: {order.onlinePayment.referenceNumber || 'Receipt photo attached'}</small>}</div>
       <footer className="receipt-ending"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {order.isDraft ? 'Payment pending' : 'Payment received'}</span><p className="receipt-footer">{settings.receiptFooter}</p><strong>{order.isDraft ? 'UNPAID COPY' : 'THANK YOU FOR SHOPPING WITH US'}</strong></footer>
     </article>
+    <p className="receipt-print-hint">For thermal printing, select your printer’s 58 mm or 80 mm paper in the print dialog. Use 100% scale and turn off headers and footers.</p>
     <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => window.print()}><PrinterIcon size={16} /> Print receipt</button></div>
   </div></div>
 }
