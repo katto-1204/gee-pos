@@ -25,7 +25,10 @@ export type Product = {
 export type CartLine = {
   productId: string
   quantity: number
+  size?: string
 }
+
+export const SHIRT_SIZES = ['5XS', '4XS', '3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL']
 
 export type Customer = {
   id: string

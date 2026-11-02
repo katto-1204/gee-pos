@@ -3,13 +3,13 @@ import type { CSSProperties, FormEvent, ReactNode } from 'react'
 import {
   ArrowRightIcon, ArrowUpIcon, BanknoteIcon, ChartIcon, CheckIcon, ChevronDownIcon,
   ClipboardIcon, CreditCardIcon, DownloadIcon, EditIcon, FilterIcon, HomeIcon,
-  LogOutIcon, MenuIcon, MinusIcon, MoreIcon, PackageIcon, PlusIcon, PrinterIcon,
+  LogOutIcon, MinusIcon, MoreIcon, PackageIcon, PlusIcon, PrinterIcon,
   ReceiptIcon, ScanIcon, SearchIcon, SendIcon, SettingsIcon, SparkIcon, TrashIcon,
   UserPlusIcon, UsersIcon, WalletIcon, XIcon,
 } from './icons'
 import {
   CATEGORY_LABELS, dateOnly, dateTime, defaultSettings, money, seedCustomers, seedOrders, seedPaymentMethods,
-  seedProducts, additionalBandanas,
+  seedProducts, additionalBandanas, SHIRT_SIZES,
 } from './data'
 import type { CartLine, Customer, OnlinePaymentDetails, Order, PaymentMethod, Product, ProductCategory, ProductKind, Settings } from './data'
 
@@ -74,12 +74,14 @@ function App() {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [newCustomer, setNewCustomer] = useState({ name: '', email: '', phone: '' })
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [creatingProduct, setCreatingProduct] = useState(false)
+  const [sizeProduct, setSizeProduct] = useState<Product | null>(null)
   const [onlinePayment, setOnlinePayment] = useState<OnlinePaymentDetails | undefined>()
   const [showOnlinePayment, setShowOnlinePayment] = useState(false)
 
   useEffect(() => {
-    const cleanCatalog = products.filter((product) => product.category === 'shirts' || product.category === 'bandanas').map((product) => ({ ...product, price: 650 }))
-    const changed = cleanCatalog.length !== products.length || cleanCatalog.some((product, index) => product.price !== products[index]?.price || product.id !== products[index]?.id)
+    const cleanCatalog = products.filter((product) => product.category === 'shirts' || product.category === 'bandanas')
+    const changed = cleanCatalog.length !== products.length || cleanCatalog.some((product, index) => product.id !== products[index]?.id)
     const missingBandanas = additionalBandanas.filter((seed) => !cleanCatalog.some((product) => product.id === seed.id || product.sku === seed.sku))
     if (changed || missingBandanas.length) setProducts([...cleanCatalog, ...missingBandanas])
   }, [products, setProducts])
@@ -120,23 +122,28 @@ function App() {
     setMobileCartOpen(false)
   }
 
-  const addToCart = (productId: string) => {
+  const addToCart = (productId: string, size?: string) => {
     const product = products.find((item) => item.id === productId)
     if (!product) return
+    if (product.category === 'shirts' && !size) {
+      setSizeProduct(product)
+      return
+    }
     const currentQty = cart.find((line) => line.productId === productId)?.quantity ?? 0
     if (currentQty >= product.stock) {
       notify(`${product.name} is at its available stock limit`)
       return
     }
-    setCart((current) => current.some((line) => line.productId === productId)
-      ? current.map((line) => line.productId === productId ? { ...line, quantity: line.quantity + 1 } : line)
-      : [...current, { productId, quantity: 1 }])
+    setCart((current) => current.some((line) => line.productId === productId && line.size === size)
+      ? current.map((line) => line.productId === productId && line.size === size ? { ...line, quantity: line.quantity + 1 } : line)
+      : [...current, { productId, quantity: 1, ...(size ? { size } : {}) }])
+    setSizeProduct(null)
     notify(`${product.name} added to tab`)
   }
 
-  const updateQuantity = (productId: string, delta: number) => {
+  const updateQuantity = (productId: string, delta: number, size?: string) => {
     setCart((current) => current.flatMap((line) => {
-      if (line.productId !== productId) return [line]
+      if (line.productId !== productId || line.size !== size) return [line]
       const product = products.find((item) => item.id === productId)
       const next = line.quantity + delta
       if (!product || next <= 0) return []
@@ -148,7 +155,7 @@ function App() {
     }))
   }
 
-  const removeFromCart = (productId: string) => setCart((current) => current.filter((line) => line.productId !== productId))
+  const removeFromCart = (productId: string, size?: string) => setCart((current) => current.filter((line) => line.productId !== productId || line.size !== size))
 
   const previewReceipt = () => {
     if (!cartDetails.length) {
@@ -157,7 +164,7 @@ function App() {
     }
     setReceipt({
       id: 'current-sale', number: 'Current sale', createdAt: new Date().toISOString(), isDraft: true,
-      items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price })),
+      items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price, size: line.size })),
       subtotal, tax, total, paymentMethod: payment,
       onlinePayment: payment === 'Online' ? onlinePayment : undefined,
       customerName: selectedCustomer?.name,
@@ -180,7 +187,7 @@ function App() {
       id: `o-${Date.now()}`,
       number: orderNumber,
       createdAt: new Date().toISOString(),
-      items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price })),
+      items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price, size: line.size })),
       subtotal,
       tax,
       total,
@@ -226,6 +233,23 @@ function App() {
     notify('Local POS data reset')
   }
 
+  const clearRecords = () => {
+    if (!window.confirm('Clear all orders, customers, and the current cart? This cannot be undone.')) return
+    setOrders([])
+    setCustomers([])
+    setCart([])
+    setSelectedCustomerId('')
+    setReceipt(null)
+    notify('Sales records cleared')
+  }
+
+  const deleteProduct = (product: Product) => {
+    if (!window.confirm(`Delete ${product.name}? This cannot be undone.`)) return
+    setProducts((current) => current.filter((item) => item.id !== product.id))
+    setCart((current) => current.filter((line) => line.productId !== product.id))
+    notify(`${product.name} deleted`)
+  }
+
   const updateSettings = (patch: Partial<Settings>) => setSettings((current) => ({ ...current, ...patch }))
 
   const navItems: Array<{ id: Page; label: string; icon: typeof HomeIcon }> = [
@@ -258,19 +282,11 @@ function App() {
     </aside>
 
     <main className="main-column">
-      <header className="topbar">
-        <button className="mobile-menu" onClick={() => notify('Use the navigation rail on desktop; your data is saved locally')}><MenuIcon size={22} /></button>
-        <div className="crumbs"><span>Gee Graphics</span><b>/</b><strong>{page === 'home' ? 'Point of Sale' : navItems.find((item) => item.id === page)?.label}</strong></div>
-        <div className="topbar-actions">
-          <div className="shift-status"><span className="pulse-dot" /> Shift live <span className="shift-time">{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date())}</span></div>
-          <button className="avatar" onClick={() => goTo('settings')}>N</button>
-        </div>
-      </header>
-      {page === 'home' && <DashboardPage products={filteredProducts} allProducts={products} category={category} setCategory={setCategory} search={search} setSearch={setSearch} addToCart={addToCart} goTo={goTo} todayRevenue={todayRevenue} todayOrders={todayOrders.length} lowStockCount={lowStockCount} />}
-      {page === 'products' && <ProductsPage products={products} search={search} setSearch={setSearch} category={category} setCategory={setCategory} addToCart={addToCart} onEdit={setEditingProduct} />}
+      {page === 'home' && <DashboardPage products={filteredProducts} category={category} setCategory={setCategory} search={search} setSearch={setSearch} addToCart={addToCart} goTo={goTo} todayRevenue={todayRevenue} todayOrders={todayOrders.length} lowStockCount={lowStockCount} />}
+      {page === 'products' && <ProductsPage products={products} search={search} setSearch={setSearch} category={category} setCategory={setCategory} addToCart={addToCart} onEdit={setEditingProduct} onCreate={() => setCreatingProduct(true)} onDelete={deleteProduct} />}
       {page === 'orders' && <OrdersPage orders={orders} />}
       {page === 'reports' && <ReportsPage orders={orders} products={products} />}
-      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onReset={resetStore} />}
+      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onReset={resetStore} onClearRecords={clearRecords} />}
     </main>
 
     {(page === 'home' || page === 'products') && <>
@@ -280,27 +296,40 @@ function App() {
 
     {toast && <div className="toast"><span className="toast-icon"><CheckIcon size={16} /></span>{toast}</div>}
     {receipt && <ReceiptModal order={receipt} settings={settings} onClose={() => setReceipt(null)} />}
+    {sizeProduct && <SizeModal product={sizeProduct} onClose={() => setSizeProduct(null)} onChoose={(size) => addToCart(sizeProduct.id, size)} />}
     {showOnlinePayment && <OnlinePaymentModal methods={paymentMethods} details={onlinePayment} onClose={() => { setShowOnlinePayment(false); if (!onlinePayment) setPayment('Cash') }} onAddMethod={(method) => setPaymentMethods((current) => current.includes(method) ? current : [...current, method])} onSave={(details) => { setOnlinePayment(details); setPayment('Online'); setShowOnlinePayment(false); notify(`${details.provider} payment details saved`) }} />}
     {showCustomerForm && <CustomerModal newCustomer={newCustomer} setNewCustomer={setNewCustomer} onClose={() => setShowCustomerForm(false)} onSubmit={addCustomer} />}
     {editingProduct && <ProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={(patch) => { setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, ...patch } : item)); setEditingProduct(null); notify('Product updated locally') }} />}
+    {creatingProduct && <ProductModal onClose={() => setCreatingProduct(false)} onSave={(patch) => {
+      const name = patch.name?.trim()
+      if (!name) return
+      const id = `p-${Date.now()}`
+      const category = patch.category ?? 'shirts'
+      const accent = patch.accent ?? (category === 'shirts' ? '#ef1b2d' : '#f4bf00')
+      const product: Product = {
+        id, sku: `GG-${category === 'shirts' ? 'SH' : 'BD'}${Date.now().toString().slice(-4)}`,
+        name, category, kind: category === 'shirts' ? 'shirt' : 'bandana',
+        price: patch.price ?? 0, stock: patch.stock ?? 0, accent, accent2: '#17181b',
+        description: `${name} ${category === 'shirts' ? 'jersey' : 'bandana'}.`,
+      }
+      setProducts((current) => [product, ...current])
+      setCreatingProduct(false)
+      notify(`${name} added to the catalog`)
+    }} create />}
   </div>
 }
 
-function DashboardPage({ products, allProducts, category, setCategory, search, setSearch, addToCart, goTo, todayRevenue, todayOrders, lowStockCount }: { products: Product[]; allProducts: Product[]; category: CategoryFilter; setCategory: (value: CategoryFilter) => void; search: string; setSearch: (value: string) => void; addToCart: (id: string) => void; goTo: (page: Page) => void; todayRevenue: number; todayOrders: number; lowStockCount: number }) {
-  const categories: Array<{ id: CategoryFilter; label: string; kind: ProductKind; visual: string }> = [
-    { id: 'all', label: 'All', kind: 'shirt', visual: 'all' },
-    { id: 'shirts', label: 'Shirts', kind: 'shirt', visual: 'shirt' },
-    { id: 'bandanas', label: 'Bandanas', kind: 'bandana', visual: 'bandana' },
+function DashboardPage({ products, category, setCategory, search, setSearch, addToCart, goTo, todayRevenue, todayOrders, lowStockCount }: { products: Product[]; category: CategoryFilter; setCategory: (value: CategoryFilter) => void; search: string; setSearch: (value: string) => void; addToCart: (id: string) => void; goTo: (page: Page) => void; todayRevenue: number; todayOrders: number; lowStockCount: number }) {
+  const categories: Array<{ id: CategoryFilter; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'shirts', label: 'Shirts' },
+    { id: 'bandanas', label: 'Bandanas' },
   ]
   const sections = category === 'all' ? (['shirts', 'bandanas'] as ProductCategory[]) : [category]
   return <div className="page-content dashboard-page">
-    <div className="welcome-row">
-      <div><div className="eyebrow"><span className="eyebrow-line" /> Saturday, October 11, 2026</div><h1>Run the floor<span className="red-dot">.</span></h1><p>Make the next sale the best one yet.</p></div>
-      <div className="quick-stats"><div className="quick-stat"><span>Today’s sales</span><strong>{money(todayRevenue)}</strong><small className={todayRevenue ? 'muted-stat' : 'warn-stat'}>{todayRevenue ? 'live' : 'No sales yet'}</small></div><div className="quick-stat"><span>Transactions</span><strong>{todayOrders}</strong><small className="muted-stat">active shift</small></div><div className="quick-stat"><span>Low stock</span><strong>{lowStockCount}</strong><small className="warn-stat">needs attention</small></div></div>
-    </div>
     <div className="catalog-toolbar">
-      <div className="section-title-row"><div><span className="eyebrow">Browse the drop</span><h2>Choose <em>Category</em></h2></div><div className="catalog-controls"><div className="filter-chips">{categories.map((item) => <button key={item.id} className={cx(category === item.id && 'active')} onClick={() => setCategory(item.id)}>{item.label}</button>)}</div><div className="search-box"><SearchIcon size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products..." /><kbd>⌘ K</kbd></div></div></div>
-      <div className="category-strip">{categories.map((item) => <button key={item.id} className={cx('category-card', category === item.id && 'selected')} onClick={() => setCategory(item.id)}><div className="category-visual"><ProductArt kind={item.kind} accent={item.id === 'all' ? '#f4f3f4' : allProducts.find((product) => product.category === item.id)?.accent ?? '#ed1d2d'} accent2={item.id === 'all' ? '#ed1d2d' : allProducts.find((product) => product.category === item.id)?.accent2 ?? '#121318'} small={item.id === 'all'} /></div><span>{item.label}</span>{category === item.id && <i className="category-active-dot" />}</button>)}</div>
+      <div className="dashboard-date">{new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date())}</div>
+      <div className="section-title-row"><div><h2>Choose <em>Category</em></h2></div><div className="catalog-controls"><div className="filter-chips">{categories.map((item) => <button key={item.id} className={cx(category === item.id && 'active')} onClick={() => setCategory(item.id)}>{item.label}</button>)}</div><div className="search-box"><SearchIcon size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products..." /><kbd>⌘ K</kbd></div></div></div>
     </div>
     <div className="catalog-sections">{sections.map((section) => {
       const sectionProducts = products.filter((product) => product.category === section)
@@ -310,9 +339,9 @@ function DashboardPage({ products, allProducts, category, setCategory, search, s
   </div>
 }
 
-function ProductsPage({ products, search, setSearch, category, setCategory, addToCart, onEdit }: { products: Product[]; search: string; setSearch: (value: string) => void; category: CategoryFilter; setCategory: (value: CategoryFilter) => void; addToCart: (id: string) => void; onEdit: (product: Product) => void }) {
+function ProductsPage({ products, search, setSearch, category, setCategory, addToCart, onEdit, onCreate, onDelete }: { products: Product[]; search: string; setSearch: (value: string) => void; category: CategoryFilter; setCategory: (value: CategoryFilter) => void; addToCart: (id: string) => void; onEdit: (product: Product) => void; onCreate: () => void; onDelete: (product: Product) => void }) {
   const shown = products.filter((product) => (category === 'all' || product.category === category) && (!search || `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())))
-  return <div className="page-content listing-page"><PageIntro eyebrow="Catalog control" title="Products" description="Manage the drop, pricing and on-hand inventory." action={<button className="ghost-button" onClick={() => setCategory('all')}><PackageIcon size={16} /> {products.length} SKUs</button>} /><div className="list-toolbar"><div className="search-box"><SearchIcon size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by product or SKU" /></div><div className="filter-pills">{(['all', 'shirts', 'bandanas'] as CategoryFilter[]).map((value) => <button key={value} className={cx(category === value && 'active')} onClick={() => setCategory(value)}>{CATEGORY_LABELS[value]}</button>)}</div><button className="icon-button"><FilterIcon size={18} /></button></div><div className="product-admin-grid">{shown.map((product) => <article className="admin-product-card" key={product.id} onClick={() => addToCart(product.id)}><div className="admin-product-art"><ProductArt kind={product.kind} accent={product.accent} accent2={product.accent2} /></div><div className="admin-product-info"><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span><h3>{product.name}</h3><p>{product.sku}</p><div className="admin-product-bottom"><strong>{money(product.price)}</strong><span className={cx('stock-badge', product.stock < 10 && 'low')}>{product.stock} in stock</span></div></div><button className="card-edit" onClick={(event) => { event.stopPropagation(); onEdit(product) }} aria-label={`Edit ${product.name}`}><EditIcon size={16} /></button></article>)}</div></div>
+  return <div className="page-content listing-page"><PageIntro title="Products" description="Manage prices and stock." action={<div className="page-actions"><button className="ghost-button" onClick={() => setCategory('all')}><PackageIcon size={16} /> {products.length} SKUs</button><button className="primary-button compact" onClick={onCreate}><PlusIcon size={16} /> Add product</button></div>} /><div className="list-toolbar"><div className="search-box"><SearchIcon size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by product or SKU" /></div><div className="filter-pills">{(['all', 'shirts', 'bandanas'] as CategoryFilter[]).map((value) => <button key={value} className={cx(category === value && 'active')} onClick={() => setCategory(value)}>{CATEGORY_LABELS[value]}</button>)}</div><button className="icon-button"><FilterIcon size={18} /></button></div><div className="product-admin-grid">{shown.map((product) => <article className="admin-product-card" key={product.id} onClick={() => addToCart(product.id)}><ProductColorBlock product={product} admin /><div className="admin-product-info"><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span><h3>{displayProductName(product.name)}</h3><p>{product.sku}</p><div className="admin-product-bottom"><strong>{money(product.price)}</strong><span className={cx('stock-badge', product.stock < 10 && 'low')}>{product.stock} in stock</span></div></div><button className="card-edit" onClick={(event) => { event.stopPropagation(); onEdit(product) }} aria-label={`Edit ${product.name}`}><EditIcon size={16} /></button><button className="card-delete" onClick={(event) => { event.stopPropagation(); onDelete(product) }} aria-label={`Delete ${product.name}`}><TrashIcon size={16} /></button></article>)}</div></div>
 }
 
 function OrdersPage({ orders }: { orders: Order[] }) {
@@ -329,21 +358,33 @@ function ReportsPage({ orders, products }: { orders: Order[]; products: Product[
   const cash = orders.filter((order) => order.paymentMethod === 'Cash').reduce((sum, order) => sum + order.total, 0)
   const online = orders.filter((order) => order.paymentMethod === 'Online').reduce((sum, order) => sum + order.total, 0)
   const inventory = [...products].sort((a, b) => b.stock - a.stock)
-  return <div className="page-content listing-page"><PageIntro eyebrow="Signals, not spreadsheets" title="Reports" description="A clear read on the local sales data in your POS." action={<button className="ghost-button"><PrinterIcon size={16} /> Print report</button>} /><div className="report-hero"><div><span className="eyebrow">All-time gross sales</span><strong>{money(gross)}</strong><p><span className={cx('green-copy', gross === 0 && 'muted-stat')}>{gross === 0 ? 'Ready for first sale' : '+14.2%'}</span> compared to last period</p></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><span /></div></div><div className="report-grid"><div className="panel-card"><div className="panel-heading"><div><span className="eyebrow">Revenue mix</span><h3>Payment methods</h3></div><MoreIcon size={19} /></div><div className="payment-bars"><PaymentBar label="Cash" value={cash} color="red" total={gross || 1} icon={<BanknoteIcon size={17} />} /><PaymentBar label="Online" value={online} color="violet" total={gross || 1} icon={<WalletIcon size={17} />} /></div></div><div className="panel-card inventory-panel"><div className="panel-heading"><div><span className="eyebrow">Inventory lens</span><h3>Stock on hand</h3></div><PackageIcon size={19} /></div><div className="stock-list">{inventory.map((product) => <div className="stock-line" key={product.id}><ProductArt kind={product.kind} accent={product.accent} accent2={product.accent2} tiny /><div><strong>{product.name}</strong><span>{product.sku}</span></div><b className={cx(product.stock < 10 && 'low')}>{product.stock}</b></div>)}</div></div></div></div>
+  return <div className="page-content listing-page"><PageIntro eyebrow="Signals, not spreadsheets" title="Reports" description="A clear read on the local sales data in your POS." action={<button className="ghost-button"><PrinterIcon size={16} /> Print report</button>} /><div className="report-hero"><div><span className="eyebrow">All-time gross sales</span><strong>{money(gross)}</strong><p><span className={cx('green-copy', gross === 0 && 'muted-stat')}>{gross === 0 ? 'Ready for first sale' : '+14.2%'}</span> compared to last period</p></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><span /></div></div><div className="report-grid"><div className="panel-card"><div className="panel-heading"><div><span className="eyebrow">Revenue mix</span><h3>Payment methods</h3></div><MoreIcon size={19} /></div><div className="payment-bars"><PaymentBar label="Cash" value={cash} color="red" total={gross || 1} icon={<BanknoteIcon size={17} />} /><PaymentBar label="Online" value={online} color="violet" total={gross || 1} icon={<WalletIcon size={17} />} /></div></div><div className="panel-card inventory-panel"><div className="panel-heading"><div><span className="eyebrow">Inventory lens</span><h3>Stock on hand</h3></div><PackageIcon size={19} /></div>  <div className="stock-list">{inventory.map((product) => <div className="stock-line" key={product.id}><span className="stock-color" style={{ background: product.accent }} /><div><strong>{displayProductName(product.name)}</strong><span>{product.sku}</span></div><b className={cx(product.stock < 10 && 'low')}>{product.stock}</b></div>)}</div></div></div></div>
 }
 
-function SettingsPage({ settings, updateSettings, onReset }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onReset: () => void }) {
-  return <div className="page-content listing-page settings-page"><PageIntro eyebrow="Make it yours" title="Settings" description="Your preferences stay in this browser and nowhere else." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><span className="eyebrow">Store profile</span><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><span className="eyebrow">Experience</span><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><span className="eyebrow">Fresh start</span><h3>Reset local data</h3></div><TrashIcon size={19} /></div><p>Restore the original Gee Graphics demo catalog and clear sales added during this session.</p><button className="danger-button" onClick={onReset}>Reset POS data</button></section></div></div>
+function SettingsPage({ settings, updateSettings, onReset, onClearRecords }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onReset: () => void; onClearRecords: () => void }) {
+  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Clear sales records without removing your catalog, or reset the whole POS to its demo data.</p><div className="danger-actions"><button className="danger-button" onClick={onClearRecords}>Clear sales records</button><button className="ghost-button" onClick={onReset}>Reset POS data</button></div></section></div></div>
 }
 
-function PageIntro({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) {
-  return <div className="page-intro"><div><span className="eyebrow"><span className="eyebrow-line" /> {eyebrow}</span><h1>{title}<span className="red-dot">.</span></h1><p>{description}</p></div>{action}</div>
+function PageIntro({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
+  return <div className="page-intro"><div>{eyebrow && <span className="eyebrow"><span className="eyebrow-line" /> {eyebrow}</span>}<h1>{title}<span className="red-dot">.</span></h1><p>{description}</p></div>{action}</div>
 }
 
 function SummaryPill({ label, value }: { label: string; value: string }) { return <div className="summary-pill"><span>{label}</span><strong>{value}</strong></div> }
 
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (id: string) => void }) {
-  return <article className="product-card" onClick={() => onAdd(product.id)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onAdd(product.id) } }}><div className="product-art-wrap"><ProductArt kind={product.kind} accent={product.accent} accent2={product.accent2} /><span className="product-price">{money(product.price)}</span>{product.stock < 10 && <span className="stock-ribbon">Low stock</span>}</div><div className="product-card-copy"><div><h4>{product.name}</h4><span>{product.sku}</span></div></div><div className="product-card-meta"><span>{product.stock} in stock</span><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span></div></article>
+  return <article className="product-card" onClick={() => onAdd(product.id)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onAdd(product.id) } }}><ProductColorBlock product={product} /><div className="product-card-copy"><div><h4>{displayProductName(product.name)}</h4><span>{product.sku}</span></div></div><div className="product-card-meta"><span>{product.stock} in stock</span><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span></div></article>
+}
+
+function displayProductName(name: string) {
+  return name.replace(/\s+(shirt|bandana)$/i, '').toUpperCase()
+}
+
+function ProductColorBlock({ product, admin = false }: { product: Product; admin?: boolean }) {
+  return <div className={cx(admin ? 'admin-product-color' : 'product-color-block')} style={{ background: `linear-gradient(135deg, ${product.accent}, ${product.accent2})` }}><strong>{displayProductName(product.name)}</strong><span className="product-price">{money(product.price)}</span>{product.stock < 10 && <span className="stock-ribbon">Low stock</span>}</div>
+}
+
+function SizeModal({ product, onClose, onChoose }: { product: Product; onClose: () => void; onChoose: (size: string) => void }) {
+  return <div className="modal-backdrop"><div className="form-modal size-modal" role="dialog" aria-modal="true" aria-labelledby="size-modal-title"><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2 id="size-modal-title">Choose size</h2><p>{displayProductName(product.name)}</p><div className="size-grid">{SHIRT_SIZES.map((size) => <button type="button" className="size-option" key={size} onClick={() => onChoose(size)}>{size}</button>)}</div><button type="button" className="ghost-button size-cancel" onClick={onClose}>Cancel</button></div></div>
 }
 
 function ProductArt({ kind, accent, accent2, small = false, tiny = false }: { kind: ProductKind; accent: string; accent2: string; small?: boolean; tiny?: boolean }) {
@@ -355,7 +396,7 @@ function ProductArt({ kind, accent, accent2, small = false, tiny = false }: { ki
   return <div className={cx('product-art', 'shirt-art', kind === 'set' && 'set-art', tiny && 'tiny-art')} style={style}><div className="shirt-back" /><div className="shirt-body"><i className="shirt-sleeve left" /><i className="shirt-sleeve right" /><div className="shirt-neck" /><span>{kind === 'set' ? 'SET' : '88'}</span></div>{kind === 'set' && <div className="mini-bandana" />}</div>
 }
 
-function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, previewReceipt, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number) => void; removeFromCart: (id: string) => void; chargeCustomer: () => void; previewReceipt: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
+function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, previewReceipt, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number, size?: string) => void; removeFromCart: (id: string, size?: string) => void; chargeCustomer: () => void; previewReceipt: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
   const customerResults = customers.filter((item) => item.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 4)
   return <aside className={cx('checkout-panel', mobileOpen && 'mobile-open')}>
     <div className="checkout-header">
@@ -374,12 +415,12 @@ function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, o
         {customer && <button className="clear-customer" onClick={() => { setSelectedCustomerId(''); setCustomerPickerOpen(false) }}>Clear customer</button>}
       </div>}
     </div>
-    <div className="order-items-heading"><span>Order items <b>{cartDetails.reduce((sum, line) => sum + line.quantity, 0)}</b></span><button onClick={() => cartDetails.forEach((line) => removeFromCart(line.product.id))}>Clear all</button></div>
+    <div className="order-items-heading"><span>Order items <b>{cartDetails.reduce((sum, line) => sum + line.quantity, 0)}</b></span><button onClick={() => cartDetails.forEach((line) => removeFromCart(line.product.id, line.size))}>Clear all</button></div>
     <div className="cart-items">
       {cartDetails.length === 0 ? <div className="empty-cart"><div className="empty-cart-mark"><ReceiptIcon size={23} /></div><h3>Your tab is clear</h3><p>Add a product to get the floor moving.</p></div> : cartDetails.map((line) => <div className="cart-item" key={line.product.id}>
-        <div className="cart-item-art"><ProductArt kind={line.product.kind} accent={line.product.accent} accent2={line.product.accent2} tiny /></div>
-        <div className="cart-item-copy"><strong>{line.product.name}</strong><span>{line.product.sku}</span><div className="qty-control"><button onClick={() => updateQuantity(line.product.id, -1)}><MinusIcon size={13} /></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1)}><PlusIcon size={13} /></button></div></div>
-        <div className="cart-item-price"><strong>{money(line.product.price * line.quantity)}</strong><button onClick={() => removeFromCart(line.product.id)}><TrashIcon size={14} /></button></div>
+        <div className="cart-item-art"><span className="cart-color" style={{ background: line.product.accent }} /></div>
+        <div className="cart-item-copy"><strong>{line.product.name}</strong><span>{line.product.sku}{line.size ? ` · Size ${line.size}` : ''}</span><div className="qty-control"><button onClick={() => updateQuantity(line.product.id, -1, line.size)}><MinusIcon size={13} /></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1, line.size)}><PlusIcon size={13} /></button></div></div>
+        <div className="cart-item-price"><strong>{money(line.product.price * line.quantity)}</strong><button onClick={() => removeFromCart(line.product.id, line.size)}><TrashIcon size={14} /></button></div>
       </div>)}
     </div>
     <div className="totals"><div><span>Sub total</span><strong>{money(subtotal)}</strong></div><div><span>Tax ({tax === 0 ? '0' : ((tax / Math.max(subtotal, 1)) * 100).toFixed(0)}%)</span><strong>{money(tax)}</strong></div><div className="grand-total"><span>Total</span><strong>{money(total)}</strong></div></div>
@@ -412,7 +453,7 @@ function ReceiptModal({ order, settings, onClose }: { order: Receipt; settings: 
         {order.customerName && <div><dt>Customer</dt><dd>{order.customerName}</dd></div>}
       </dl>
       <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
-      <div className="receipt-lines">{order.items.map((item) => <div key={item.productId}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)}<span className="receipt-sku">{item.sku}</span></small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
+      <div className="receipt-lines">{order.items.map((item, index) => <div key={`${item.productId}-${item.size ?? 'one-size'}-${index}`}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)}{item.size && ` · Size ${item.size}`}<span className="receipt-sku">{item.sku}</span></small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
       <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
       <div className="receipt-total"><div className="receipt-amount"><span>{order.isDraft ? 'Total due' : 'Total paid'}</span><strong>{money(order.total)}</strong></div>{!order.isDraft && <div className="receipt-payment"><span>Payment method</span><strong>{order.paymentMethod}{order.onlinePayment && ` · ${order.onlinePayment.provider}`}</strong></div>}{!order.isDraft && order.onlinePayment && <small className="receipt-payment-detail">Account: {order.onlinePayment.accountName}<br />Reference: {order.onlinePayment.referenceNumber || 'Receipt photo attached'}</small>}</div>
       <footer className="receipt-ending"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {order.isDraft ? 'Payment pending' : 'Payment received'}</span><p className="receipt-footer">{settings.receiptFooter}</p><strong>{order.isDraft ? 'UNPAID COPY' : 'THANK YOU FOR SHOPPING WITH US'}</strong></footer>
@@ -424,7 +465,13 @@ function ReceiptModal({ order, settings, onClose }: { order: Receipt; settings: 
 
 function CustomerModal({ newCustomer, setNewCustomer, onClose, onSubmit }: { newCustomer: { name: string; email: string; phone: string }; setNewCustomer: (value: { name: string; email: string; phone: string }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <div className="modal-backdrop"><form className="form-modal" onSubmit={onSubmit}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Add to the crew</span><h2>New customer<span className="red-dot">.</span></h2><p>Keep the relationship local, keep the checkout moving.</p><label className="field-label">Name<input autoFocus required value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} placeholder="Full name" /></label><label className="field-label">Email<input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })} placeholder="name@example.com" /></label><label className="field-label">Phone<input value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} placeholder="(555) 000-0000" /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><UserPlusIcon size={16} /> Save customer</button></div></form></div> }
 
-function ProductModal({ product, onClose, onSave }: { product: Product; onClose: () => void; onSave: (patch: Partial<Product>) => void }) { const [stock, setStock] = useState(product.stock); const [price, setPrice] = useState(product.price); return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ stock, price }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Catalog edit</span><h2>{product.name}</h2><p>{product.sku} · {CATEGORY_LABELS[product.category]}</p><label className="field-label">Price<input type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><label className="field-label">Stock on hand<input type="number" min="0" step="1" value={stock} onChange={(event) => setStock(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> Save changes</button></div></form></div> }
+function ProductModal({ product, onClose, onSave, create = false }: { product?: Product; onClose: () => void; onSave: (patch: Partial<Product>) => void; create?: boolean }) {
+  const [name, setName] = useState(product ? displayProductName(product.name) : '')
+  const [category, setCategory] = useState<ProductCategory>(product?.category ?? 'shirts')
+  const [stock, setStock] = useState(product?.stock ?? 0)
+  const [price, setPrice] = useState(product?.price ?? 0)
+  return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category, stock, price }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}{create && <label className="field-label">Category<select value={category} onChange={(event) => setCategory(event.target.value as ProductCategory)}><option value="shirts">Shirts</option><option value="bandanas">Bandanas</option></select></label>}<label className="field-label">Price<input required type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><label className="field-label">Stock on hand<input required type="number" min="0" step="1" value={stock} onChange={(event) => setStock(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
+}
 
 export default App
 
