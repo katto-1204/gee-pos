@@ -16,6 +16,7 @@ export type Product = {
   kind: ProductKind
   price: number
   stock: number
+  sizeStock?: Record<string, number>
   accent: string
   accent2: string
   featured?: boolean
@@ -29,6 +30,13 @@ export type CartLine = {
 }
 
 export const SHIRT_SIZES = ['5XS', '4XS', '3XS', '2XS', 'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL']
+
+export type AuditLog = {
+  id: string
+  createdAt: string
+  action: string
+  details: string
+}
 
 export type Customer = {
   id: string
@@ -60,6 +68,7 @@ export type Settings = {
   receiptFooter: string
   soundEffects: boolean
   compactMode: boolean
+  lightMode: boolean
 }
 
 export const CATEGORY_LABELS: Record<ProductCategory | 'all', string> = {
@@ -99,7 +108,7 @@ export const seedCustomers: Customer[] = []
 export const seedOrders: Order[] = []
 
 export const seedPaymentMethods = ['GCash', 'MariBank', 'GoTyme', 'BPI']
-export const defaultSettings: Settings = { storeName: 'Gee Graphics POS', taxRate: 6, receiptFooter: 'Thank you for supporting independent graphics.', soundEffects: true, compactMode: true }
+export const defaultSettings: Settings = { storeName: 'Gee Graphics POS', taxRate: 6, receiptFooter: 'Thank you for supporting independent graphics.', soundEffects: true, compactMode: true, lightMode: false }
 
 export const money = (value: number) => `₱${value.toFixed(2)}`
 export const dateTime = (value: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))

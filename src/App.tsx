@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, FormEvent, ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from 'react'
 import {
   ArrowRightIcon, ArrowUpIcon, BanknoteIcon, ChartIcon, CheckIcon, ChevronDownIcon,
   ClipboardIcon, CreditCardIcon, DownloadIcon, EditIcon, FilterIcon, HomeIcon,
@@ -11,7 +11,7 @@ import {
   CATEGORY_LABELS, dateOnly, dateTime, defaultSettings, money, seedCustomers, seedOrders, seedPaymentMethods,
   seedProducts, additionalBandanas, SHIRT_SIZES,
 } from './data'
-import type { CartLine, Customer, OnlinePaymentDetails, Order, PaymentMethod, Product, ProductCategory, ProductKind, Settings } from './data'
+import type { AuditLog, CartLine, Customer, OnlinePaymentDetails, Order, PaymentMethod, Product, ProductCategory, ProductKind, Settings } from './data'
 
 type Page = 'home' | 'products' | 'orders' | 'customers' | 'reports' | 'settings'
 type CategoryFilter = ProductCategory | 'all'
@@ -24,6 +24,7 @@ const STORAGE = {
   orders: 'gg-orders-v1',
   settings: 'gg-settings-v2',
   paymentMethods: 'gg-payment-methods-v1',
+  auditLogs: 'gg-audit-logs-v1',
 }
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -54,6 +55,31 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
+function distributeStock(total: number): Record<string, number> {
+  const sizeStock = Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0]))
+  let remaining = Math.max(0, total)
+  SHIRT_SIZES.forEach((size, index) => {
+    const allocation = Math.ceil(remaining / (SHIRT_SIZES.length - index))
+    sizeStock[size] = Math.min(remaining, allocation)
+    remaining -= sizeStock[size]
+  })
+  return sizeStock
+}
+
+function normalizeProductStock(product: Product): Product {
+  const stock = Math.max(0, Math.floor(Number.isFinite(product.stock) ? product.stock : 0))
+  if (product.category !== 'shirts') return product.stock === stock ? product : { ...product, stock }
+  const sizeStock = product.sizeStock
+  const validSizeStock = sizeStock && SHIRT_SIZES.every((size) => Number.isFinite(sizeStock[size]) && sizeStock[size] >= 0 && Number.isInteger(sizeStock[size]))
+  const sizeTotal = validSizeStock ? SHIRT_SIZES.reduce((sum, size) => sum + sizeStock[size], 0) : -1
+  return validSizeStock && sizeTotal === stock ? { ...product, stock } : { ...product, stock, sizeStock: distributeStock(stock) }
+}
+
+function getSizeStock(product: Product): Record<string, number> {
+  const normalized = normalizeProductStock(product)
+  return normalized.sizeStock ?? {}
+}
+
 function App() {
   const [page, setPage] = useState<Page>('home')
   const [products, setProducts] = useStored<Product[]>(STORAGE.products, seedProducts)
@@ -62,6 +88,7 @@ function App() {
   const [orders, setOrders] = useStored<Order[]>(STORAGE.orders, seedOrders)
   const [settings, setSettings] = useStored<Settings>(STORAGE.settings, defaultSettings)
   const [paymentMethods, setPaymentMethods] = useStored<string[]>(STORAGE.paymentMethods, seedPaymentMethods)
+  const [auditLogs, setAuditLogs] = useStored<AuditLog[]>(STORAGE.auditLogs, [])
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [search, setSearch] = useState('')
   const [payment, setPayment] = useState<PaymentMethod>('Cash')
@@ -78,18 +105,34 @@ function App() {
   const [sizeProduct, setSizeProduct] = useState<Product | null>(null)
   const [onlinePayment, setOnlinePayment] = useState<OnlinePaymentDetails | undefined>()
   const [showOnlinePayment, setShowOnlinePayment] = useState(false)
+  const importInput = useRef<HTMLInputElement>(null)
+
+  const recordAudit = (action: string, details: string) => {
+    setAuditLogs((current) => [{ id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, createdAt: new Date().toISOString(), action, details }, ...current].slice(0, 500))
+  }
 
   useEffect(() => {
-    const cleanCatalog = products.filter((product) => product.category === 'shirts' || product.category === 'bandanas')
-    const changed = cleanCatalog.length !== products.length || cleanCatalog.some((product, index) => product.id !== products[index]?.id)
+    const cleanCatalog = products.filter((product) => product.category === 'shirts' || product.category === 'bandanas').map(normalizeProductStock)
+    const changed = cleanCatalog.length !== products.length || cleanCatalog.some((product, index) => product.id !== products[index]?.id || product.stock !== products[index]?.stock || product.sizeStock !== products[index]?.sizeStock)
     const missingBandanas = additionalBandanas.filter((seed) => !cleanCatalog.some((product) => product.id === seed.id || product.sku === seed.sku))
     if (changed || missingBandanas.length) setProducts([...cleanCatalog, ...missingBandanas])
   }, [products, setProducts])
 
   useEffect(() => {
     const validIds = new Set(products.map((product) => product.id))
-    const cleanCart = cart.filter((line) => validIds.has(line.productId))
-    if (cleanCart.length !== cart.length) setCart(cleanCart)
+    const reserved = new Map<string, number>()
+    const cleanCart = cart.flatMap((line) => {
+      const product = products.find((item) => item.id === line.productId)
+      if (!product || !Number.isInteger(line.quantity) || line.quantity <= 0) return []
+      const key = `${line.productId}:${line.size ?? 'one-size'}`
+      const available = line.size ? product.sizeStock?.[line.size] ?? 0 : product.stock
+      const remaining = Math.max(0, available - (reserved.get(key) ?? 0))
+      const quantity = Math.min(line.quantity, remaining)
+      if (!quantity) return []
+      reserved.set(key, (reserved.get(key) ?? 0) + quantity)
+      return [{ ...line, quantity }]
+    })
+    if (cleanCart.length !== cart.length || cleanCart.some((line, index) => line.quantity !== cart[index]?.quantity)) setCart(cleanCart)
   }, [cart, products, setCart])
 
   useEffect(() => {
@@ -129,9 +172,10 @@ function App() {
       setSizeProduct(product)
       return
     }
-    const currentQty = cart.find((line) => line.productId === productId)?.quantity ?? 0
-    if (currentQty >= product.stock) {
-      notify(`${product.name} is at its available stock limit`)
+    const currentQty = cart.filter((line) => line.productId === productId && line.size === size).reduce((sum, line) => sum + line.quantity, 0)
+    const available = size ? getSizeStock(product)[size] ?? 0 : product.stock
+    if (currentQty >= available) {
+      notify(`${product.name}${size ? ` (${size})` : ''} is out of stock`)
       return
     }
     setCart((current) => current.some((line) => line.productId === productId && line.size === size)
@@ -147,8 +191,9 @@ function App() {
       const product = products.find((item) => item.id === productId)
       const next = line.quantity + delta
       if (!product || next <= 0) return []
-      if (next > product.stock) {
-        notify(`Only ${product.stock} left in stock`)
+      const available = line.size ? getSizeStock(product)[line.size] ?? 0 : product.stock
+      if (next > available) {
+        notify(`Only ${available} ${line.size ? `${line.size} size ` : ''}left in stock`)
         return [line]
       }
       return [{ ...line, quantity: next }]
@@ -197,9 +242,14 @@ function App() {
       customerName: customer?.name,
     }
     setOrders((current) => [order, ...current])
+    recordAudit('Sale completed', `${order.number} · ${money(total)} · ${payment}`)
     setProducts((current) => current.map((product) => {
-      const line = cart.find((item) => item.productId === product.id)
-      return line ? { ...product, stock: Math.max(0, product.stock - line.quantity) } : product
+      const soldLines = cart.filter((item) => item.productId === product.id)
+      const quantitySold = soldLines.reduce((sum, item) => sum + item.quantity, 0)
+      if (!quantitySold) return product
+      const sizeStock = product.category === 'shirts' ? { ...getSizeStock(product) } : undefined
+      soldLines.forEach((item) => { if (sizeStock && item.size) sizeStock[item.size] = Math.max(0, (sizeStock[item.size] ?? 0) - item.quantity) })
+      return { ...product, stock: Math.max(0, product.stock - quantitySold), ...(sizeStock ? { sizeStock } : {}) }
     }))
     if (customer) {
       setCustomers((current) => current.map((item) => item.id === customer.id ? { ...item, orders: item.orders + 1, totalSpent: item.totalSpent + total } : item))
@@ -220,6 +270,7 @@ function App() {
     setNewCustomer({ name: '', email: '', phone: '' })
     setShowCustomerForm(false)
     notify(`${customer.name} added to customers`)
+    recordAudit('Customer added', customer.name)
   }
 
   const resetStore = () => {
@@ -230,6 +281,8 @@ function App() {
     setCart([])
     setPaymentMethods(seedPaymentMethods)
     setSettings(defaultSettings)
+    setAuditLogs([])
+    recordAudit('POS reset', 'Catalog, records, and settings restored to demo data')
     notify('Local POS data reset')
   }
 
@@ -240,7 +293,55 @@ function App() {
     setCart([])
     setSelectedCustomerId('')
     setReceipt(null)
+    recordAudit('Sales records cleared', 'Orders, customers, and current cart removed')
     notify('Sales records cleared')
+  }
+
+  const exportData = () => {
+    const snapshot = {
+      format: 'gee-pos-export',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      products,
+      cart,
+      customers,
+      orders,
+      settings,
+      paymentMethods,
+      auditLogs,
+    }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `gee-pos-export-${new Date().toISOString().slice(0, 10)}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    recordAudit('Data exported', `${orders.length} transactions and ${products.length} products`)
+    notify('POS data exported')
+  }
+
+  const importData = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const imported = JSON.parse(await file.text()) as Partial<{
+        products: Product[]; cart: CartLine[]; customers: Customer[]; orders: Order[]
+        settings: Settings; paymentMethods: string[]; auditLogs: AuditLog[]
+      }>
+      if (!Array.isArray(imported.products) || !Array.isArray(imported.orders) || !Array.isArray(imported.customers) || !imported.settings) throw new Error('Invalid Gee POS export file')
+      if (!window.confirm('Replace this POS data with the imported file?')) return
+      setProducts(imported.products)
+      setCart(Array.isArray(imported.cart) ? imported.cart : [])
+      setCustomers(imported.customers)
+      setOrders(imported.orders)
+      setSettings(imported.settings)
+      setPaymentMethods(Array.isArray(imported.paymentMethods) ? imported.paymentMethods : seedPaymentMethods)
+      setAuditLogs([{ id: `audit-${Date.now()}`, createdAt: new Date().toISOString(), action: 'Data imported', details: `${imported.orders.length} transactions restored from ${file.name}` }, ...(imported.auditLogs ?? [])].slice(0, 500))
+      notify('POS data imported')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not import POS data')
+    }
   }
 
   const deleteProduct = (product: Product) => {
@@ -248,6 +349,7 @@ function App() {
     setProducts((current) => current.filter((item) => item.id !== product.id))
     setCart((current) => current.filter((line) => line.productId !== product.id))
     notify(`${product.name} deleted`)
+    recordAudit('Product deleted', product.name)
   }
 
   const updateSettings = (patch: Partial<Settings>) => setSettings((current) => ({ ...current, ...patch }))
@@ -260,7 +362,7 @@ function App() {
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ]
 
-  return <div className={cx('app-shell', settings.compactMode && 'compact-mode')}>
+  return <div className={cx('app-shell', settings.compactMode && 'compact-mode', settings.lightMode && 'light-mode')}>
     <div className="accent-orbit accent-orbit-one" />
     <div className="accent-orbit accent-orbit-two" />
     <aside className="sidebar">
@@ -284,9 +386,9 @@ function App() {
     <main className="main-column">
       {page === 'home' && <DashboardPage products={filteredProducts} category={category} setCategory={setCategory} search={search} setSearch={setSearch} addToCart={addToCart} goTo={goTo} todayRevenue={todayRevenue} todayOrders={todayOrders.length} lowStockCount={lowStockCount} />}
       {page === 'products' && <ProductsPage products={products} search={search} setSearch={setSearch} category={category} setCategory={setCategory} addToCart={addToCart} onEdit={setEditingProduct} onCreate={() => setCreatingProduct(true)} onDelete={deleteProduct} />}
-      {page === 'orders' && <OrdersPage orders={orders} />}
+      {page === 'orders' && <OrdersPage orders={orders} auditLogs={auditLogs} />}
       {page === 'reports' && <ReportsPage orders={orders} products={products} />}
-      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onReset={resetStore} onClearRecords={clearRecords} />}
+      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onClearRecords={clearRecords} onExport={exportData} onImport={() => importInput.current?.click()} />}
     </main>
 
     {(page === 'home' || page === 'products') && <>
@@ -296,10 +398,10 @@ function App() {
 
     {toast && <div className="toast"><span className="toast-icon"><CheckIcon size={16} /></span>{toast}</div>}
     {receipt && <ReceiptModal order={receipt} settings={settings} onClose={() => setReceipt(null)} />}
-    {sizeProduct && <SizeModal product={sizeProduct} onClose={() => setSizeProduct(null)} onChoose={(size) => addToCart(sizeProduct.id, size)} />}
+    {sizeProduct && <SizeModal product={sizeProduct} cart={cart} onClose={() => setSizeProduct(null)} onChoose={(size) => addToCart(sizeProduct.id, size)} />}
     {showOnlinePayment && <OnlinePaymentModal methods={paymentMethods} details={onlinePayment} onClose={() => { setShowOnlinePayment(false); if (!onlinePayment) setPayment('Cash') }} onAddMethod={(method) => setPaymentMethods((current) => current.includes(method) ? current : [...current, method])} onSave={(details) => { setOnlinePayment(details); setPayment('Online'); setShowOnlinePayment(false); notify(`${details.provider} payment details saved`) }} />}
     {showCustomerForm && <CustomerModal newCustomer={newCustomer} setNewCustomer={setNewCustomer} onClose={() => setShowCustomerForm(false)} onSubmit={addCustomer} />}
-    {editingProduct && <ProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={(patch) => { setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, ...patch } : item)); setEditingProduct(null); notify('Product updated locally') }} />}
+    {editingProduct && <ProductModal product={editingProduct} onClose={() => setEditingProduct(null)} onSave={(patch) => { setProducts((current) => current.map((item) => item.id === editingProduct.id ? { ...item, ...patch } : item)); setEditingProduct(null); recordAudit('Product updated', `${editingProduct.name} · ${patch.price !== undefined ? money(patch.price) : 'stock changed'}`); notify('Product updated locally') }} />}
     {creatingProduct && <ProductModal onClose={() => setCreatingProduct(false)} onSave={(patch) => {
       const name = patch.name?.trim()
       if (!name) return
@@ -315,7 +417,9 @@ function App() {
       setProducts((current) => [product, ...current])
       setCreatingProduct(false)
       notify(`${name} added to the catalog`)
+      recordAudit('Product added', name)
     }} create />}
+    <input ref={importInput} type="file" accept="application/json,.json" hidden onChange={importData} />
   </div>
 }
 
@@ -344,8 +448,8 @@ function ProductsPage({ products, search, setSearch, category, setCategory, addT
   return <div className="page-content listing-page"><PageIntro title="Products" description="Manage prices and stock." action={<div className="page-actions"><button className="ghost-button" onClick={() => setCategory('all')}><PackageIcon size={16} /> {products.length} SKUs</button><button className="primary-button compact" onClick={onCreate}><PlusIcon size={16} /> Add product</button></div>} /><div className="list-toolbar"><div className="search-box"><SearchIcon size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by product or SKU" /></div><div className="filter-pills">{(['all', 'shirts', 'bandanas'] as CategoryFilter[]).map((value) => <button key={value} className={cx(category === value && 'active')} onClick={() => setCategory(value)}>{CATEGORY_LABELS[value]}</button>)}</div><button className="icon-button"><FilterIcon size={18} /></button></div><div className="product-admin-grid">{shown.map((product) => <article className="admin-product-card" key={product.id} onClick={() => addToCart(product.id)}><ProductColorBlock product={product} admin /><div className="admin-product-info"><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span><h3>{displayProductName(product.name)}</h3><p>{product.sku}</p><div className="admin-product-bottom"><strong>{money(product.price)}</strong><span className={cx('stock-badge', product.stock < 10 && 'low')}>{product.stock} in stock</span></div></div><button className="card-edit" onClick={(event) => { event.stopPropagation(); onEdit(product) }} aria-label={`Edit ${product.name}`}><EditIcon size={16} /></button><button className="card-delete" onClick={(event) => { event.stopPropagation(); onDelete(product) }} aria-label={`Delete ${product.name}`}><TrashIcon size={16} /></button></article>)}</div></div>
 }
 
-function OrdersPage({ orders }: { orders: Order[] }) {
-  return <div className="page-content listing-page"><PageIntro eyebrow="Sales ledger" title="Orders" description="Every sale from this browser, kept right here on this device." action={<button className="ghost-button"><DownloadIcon size={16} /> Export CSV</button>} /><div className="order-summary-strip"><SummaryPill label="Gross sales" value={money(orders.reduce((sum, order) => sum + order.total, 0))} /><SummaryPill label="Transactions" value={String(orders.length)} /><SummaryPill label="Average ticket" value={money(orders.length ? orders.reduce((sum, order) => sum + order.total, 0) / orders.length : 0)} /></div><div className="table-card"><div className="table-toolbar"><strong>Recent orders</strong><button className="icon-button"><MoreIcon size={19} /></button></div><div className="orders-table"><div className="table-head"><span>Order</span><span>Customer</span><span>Items</span><span>Payment</span><span>Date</span><span>Total</span></div>{orders.map((order) => <div className="table-row" key={order.id}><strong>{order.number}</strong><span>{order.customerName || 'Walk-in customer'}</span><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items</span><span><PaymentBadge method={order.paymentMethod} /></span><span>{dateTime(order.createdAt)}</span><strong>{money(order.total)}</strong></div>)}</div></div></div>
+function OrdersPage({ orders, auditLogs }: { orders: Order[]; auditLogs: AuditLog[] }) {
+  return <div className="page-content listing-page"><PageIntro title="Orders" description="Transactions and activity from this device." /><div className="order-summary-strip"><SummaryPill label="Gross sales" value={money(orders.reduce((sum, order) => sum + order.total, 0))} /><SummaryPill label="Transactions" value={String(orders.length)} /><SummaryPill label="Average ticket" value={money(orders.length ? orders.reduce((sum, order) => sum + order.total, 0) / orders.length : 0)} /></div><div className="table-card"><div className="table-toolbar"><strong>Recent orders</strong></div><div className="orders-table"><div className="table-head"><span>Order</span><span>Customer</span><span>Items</span><span>Payment</span><span>Date & time</span><span>Total</span></div>{orders.map((order) => <div className="table-row" key={order.id}><strong>{order.number}</strong><span>{order.customerName || 'Walk-in customer'}</span><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items</span><span><PaymentBadge method={order.paymentMethod} /></span><span>{dateTime(order.createdAt)}</span><strong>{money(order.total)}</strong></div>)}</div></div><div className="table-card audit-card"><div className="table-toolbar"><strong>Audit log</strong><span>{auditLogs.length} events</span></div><div className="audit-list">{auditLogs.length ? auditLogs.map((log) => <div className="audit-row" key={log.id}><time>{dateTime(log.createdAt)}</time><strong>{log.action}</strong><span>{log.details}</span></div>) : <p className="empty-state">No activity recorded yet.</p>}</div></div></div>
 }
 
 function CustomersPage({ customers, onAdd }: { customers: Customer[]; onAdd: () => void }) {
@@ -361,8 +465,8 @@ function ReportsPage({ orders, products }: { orders: Order[]; products: Product[
   return <div className="page-content listing-page"><PageIntro eyebrow="Signals, not spreadsheets" title="Reports" description="A clear read on the local sales data in your POS." action={<button className="ghost-button"><PrinterIcon size={16} /> Print report</button>} /><div className="report-hero"><div><span className="eyebrow">All-time gross sales</span><strong>{money(gross)}</strong><p><span className={cx('green-copy', gross === 0 && 'muted-stat')}>{gross === 0 ? 'Ready for first sale' : '+14.2%'}</span> compared to last period</p></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><span /></div></div><div className="report-grid"><div className="panel-card"><div className="panel-heading"><div><span className="eyebrow">Revenue mix</span><h3>Payment methods</h3></div><MoreIcon size={19} /></div><div className="payment-bars"><PaymentBar label="Cash" value={cash} color="red" total={gross || 1} icon={<BanknoteIcon size={17} />} /><PaymentBar label="Online" value={online} color="violet" total={gross || 1} icon={<WalletIcon size={17} />} /></div></div><div className="panel-card inventory-panel"><div className="panel-heading"><div><span className="eyebrow">Inventory lens</span><h3>Stock on hand</h3></div><PackageIcon size={19} /></div>  <div className="stock-list">{inventory.map((product) => <div className="stock-line" key={product.id}><span className="stock-color" style={{ background: product.accent }} /><div><strong>{displayProductName(product.name)}</strong><span>{product.sku}</span></div><b className={cx(product.stock < 10 && 'low')}>{product.stock}</b></div>)}</div></div></div></div>
 }
 
-function SettingsPage({ settings, updateSettings, onReset, onClearRecords }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onReset: () => void; onClearRecords: () => void }) {
-  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Clear sales records without removing your catalog, or reset the whole POS to its demo data.</p><div className="danger-actions"><button className="danger-button" onClick={onClearRecords}>Clear sales records</button><button className="ghost-button" onClick={onReset}>Reset POS data</button></div></section></div></div>
+function SettingsPage({ settings, updateSettings, onClearRecords, onExport, onImport }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onClearRecords: () => void; onExport: () => void; onImport: () => void }) {
+  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Light mode" description="Use a brighter theme for daytime work." value={settings.lightMode} onChange={(value) => updateSettings({ lightMode: value })} /><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card"><div className="panel-heading"><div><h3>Backup data</h3></div><DownloadIcon size={19} /></div><p>Export all transactions, products, customers, settings, and audit history to a JSON file. Import it later to restore this POS.</p><div className="danger-actions"><button className="primary-button" onClick={onExport}>Export JSON</button><button className="ghost-button" onClick={onImport}>Import JSON</button></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Clear sales records without removing your catalog.</p><button className="danger-button" onClick={onClearRecords}>Clear sales records</button></section></div></div>
 }
 
 function PageIntro({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
@@ -383,8 +487,9 @@ function ProductColorBlock({ product, admin = false }: { product: Product; admin
   return <div className={cx(admin ? 'admin-product-color' : 'product-color-block')} style={{ background: `linear-gradient(135deg, ${product.accent}, ${product.accent2})` }}><strong>{displayProductName(product.name)}</strong><span className="product-price">{money(product.price)}</span>{product.stock < 10 && <span className="stock-ribbon">Low stock</span>}</div>
 }
 
-function SizeModal({ product, onClose, onChoose }: { product: Product; onClose: () => void; onChoose: (size: string) => void }) {
-  return <div className="modal-backdrop"><div className="form-modal size-modal" role="dialog" aria-modal="true" aria-labelledby="size-modal-title"><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2 id="size-modal-title">Choose size</h2><p>{displayProductName(product.name)}</p><div className="size-grid">{SHIRT_SIZES.map((size) => <button type="button" className="size-option" key={size} onClick={() => onChoose(size)}>{size}</button>)}</div><button type="button" className="ghost-button size-cancel" onClick={onClose}>Cancel</button></div></div>
+function SizeModal({ product, cart, onClose, onChoose }: { product: Product; cart: CartLine[]; onClose: () => void; onChoose: (size: string) => void }) {
+  const sizeStock = getSizeStock(product)
+  return <div className="modal-backdrop"><div className="form-modal size-modal" role="dialog" aria-modal="true" aria-labelledby="size-modal-title"><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2 id="size-modal-title">Choose size</h2><p>{displayProductName(product.name)}</p><div className="size-grid">{SHIRT_SIZES.map((size) => { const reserved = cart.filter((line) => line.productId === product.id && line.size === size).reduce((sum, line) => sum + line.quantity, 0); const available = Math.max(0, (sizeStock[size] ?? 0) - reserved); return <button type="button" className="size-option" disabled={!available} key={size} onClick={() => onChoose(size)}><strong>{size}</strong><small>{available} available</small></button> })}</div><button type="button" className="ghost-button size-cancel" onClick={onClose}>Cancel</button></div></div>
 }
 
 function ProductArt({ kind, accent, accent2, small = false, tiny = false }: { kind: ProductKind; accent: string; accent2: string; small?: boolean; tiny?: boolean }) {
@@ -417,7 +522,7 @@ function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, o
     </div>
     <div className="order-items-heading"><span>Order items <b>{cartDetails.reduce((sum, line) => sum + line.quantity, 0)}</b></span><button onClick={() => cartDetails.forEach((line) => removeFromCart(line.product.id, line.size))}>Clear all</button></div>
     <div className="cart-items">
-      {cartDetails.length === 0 ? <div className="empty-cart"><div className="empty-cart-mark"><ReceiptIcon size={23} /></div><h3>Your tab is clear</h3><p>Add a product to get the floor moving.</p></div> : cartDetails.map((line) => <div className="cart-item" key={line.product.id}>
+      {cartDetails.length === 0 ? <div className="empty-cart"><div className="empty-cart-mark"><ReceiptIcon size={23} /></div><h3>Your tab is clear</h3><p>Add a product to get the floor moving.</p></div> : cartDetails.map((line) => <div className="cart-item" key={`${line.product.id}-${line.size ?? 'one-size'}`}>
         <div className="cart-item-art"><span className="cart-color" style={{ background: line.product.accent }} /></div>
         <div className="cart-item-copy"><strong>{line.product.name}</strong><span>{line.product.sku}{line.size ? ` · Size ${line.size}` : ''}</span><div className="qty-control"><button onClick={() => updateQuantity(line.product.id, -1, line.size)}><MinusIcon size={13} /></button><b>{line.quantity}</b><button onClick={() => updateQuantity(line.product.id, 1, line.size)}><PlusIcon size={13} /></button></div></div>
         <div className="cart-item-price"><strong>{money(line.product.price * line.quantity)}</strong><button onClick={() => removeFromCart(line.product.id, line.size)}><TrashIcon size={14} /></button></div>
@@ -470,7 +575,8 @@ function ProductModal({ product, onClose, onSave, create = false }: { product?: 
   const [category, setCategory] = useState<ProductCategory>(product?.category ?? 'shirts')
   const [stock, setStock] = useState(product?.stock ?? 0)
   const [price, setPrice] = useState(product?.price ?? 0)
-  return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category, stock, price }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}{create && <label className="field-label">Category<select value={category} onChange={(event) => setCategory(event.target.value as ProductCategory)}><option value="shirts">Shirts</option><option value="bandanas">Bandanas</option></select></label>}<label className="field-label">Price<input required type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><label className="field-label">Stock on hand<input required type="number" min="0" step="1" value={stock} onChange={(event) => setStock(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
+  const [sizeStock, setSizeStock] = useState<Record<string, number>>(product?.sizeStock ?? Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0])))
+  return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category, stock: category === 'shirts' ? Object.values(sizeStock).reduce((sum, value) => sum + value, 0) : stock, price, ...(category === 'shirts' ? { sizeStock } : {}) }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}{create && <label className="field-label">Category<select value={category} onChange={(event) => setCategory(event.target.value as ProductCategory)}><option value="shirts">Shirts</option><option value="bandanas">Bandanas</option></select></label>}{category === 'shirts' ? <div className="inventory-size-grid"><strong>Available by size</strong>{SHIRT_SIZES.map((size) => <label key={size}>{size}<input type="number" min="0" step="1" value={sizeStock[size] ?? 0} onChange={(event) => setSizeStock({ ...sizeStock, [size]: Number(event.target.value) || 0 })} /></label>)}</div> : <label className="field-label">Stock on hand<input required type="number" min="0" step="1" value={stock} onChange={(event) => setStock(Number(event.target.value))} /></label>}<label className="field-label">Price<input required type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
 }
 
 export default App

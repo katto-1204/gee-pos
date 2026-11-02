@@ -273,6 +273,12 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .summary-pill span { color: #7c7d83; text-transform: uppercase; font-size: 9px; letter-spacing: .1em; }
 .summary-pill strong { font-family: var(--font-display); font-size: 28px; }
 .table-card, .settings-card, .panel-card { background: #141517; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; }
+.audit-card { margin-top: 15px; }
+.audit-list { display: flex; flex-direction: column; }
+.audit-row { display: grid; grid-template-columns: 135px 150px 1fr; gap: 12px; align-items: center; padding: 12px 18px; border-top: 1px solid rgba(255,255,255,.06); font-size: 11px; }
+.audit-row time, .audit-row span { color: #85868c; }
+.audit-row strong { color: #e8e8ea; }
+.empty-state { color: #85868c; font-size: 11px; padding: 18px; }
 .table-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 15px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .orders-table { overflow-x: auto; }
 .table-head, .table-row { min-width: 680px; display: grid; grid-template-columns: .7fr 1.5fr .8fr .9fr 1.1fr .7fr; align-items: center; gap: 12px; padding: 13px 18px; }
@@ -341,7 +347,13 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .size-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 20px; }
 .size-option { min-height: 42px; color: #e9e9eb; background: #222328; border: 1px solid rgba(255,255,255,.12); border-radius: 7px; font-size: 12px; font-weight: 700; }
 .size-option:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.size-option small { display: block; margin-top: 3px; color: #92939a; font-size: 9px; font-weight: 500; }
+.size-option:disabled { cursor: not-allowed; opacity: .4; }
 .size-cancel { margin-top: 18px; width: 100%; }
+.inventory-size-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px; }
+.inventory-size-grid > strong { grid-column: 1 / -1; color: #a9aaae; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.inventory-size-grid label { color: #a9aaae; font-size: 9px; }
+.inventory-size-grid input { width: 100%; margin-top: 4px; padding: 8px 5px; background: #1c1d20; border: 1px solid rgba(255,255,255,.1); border-radius: 6px; color: #fff; font-size: 11px; }
 .receipt-modal, .form-modal { width: min(430px, 100%); position: relative; padding: 28px; border: 1px solid rgba(255,255,255,.15); border-radius: 15px; background: linear-gradient(145deg, #242529, #17181a); box-shadow: 0 24px 70px rgba(0,0,0,.5); text-align: center; animation: modal-in .25s ease-out; }.form-modal { text-align: left; }.form-modal .field-label { text-align: left; }.form-modal .modal-actions { margin-top: 24px; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .modal-close { position: absolute; top: 16px; right: 16px; color: #9b9ca1; background: transparent; }.modal-close:hover { color: #fff; }.success-ring { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid var(--green); border-radius: 50%; color: var(--green); margin: 0 auto 16px; background: rgba(104,215,154,.1); }.receipt-modal h2, .form-modal h2 { font-size: 35px; margin-top: 9px; }.receipt-modal > p, .form-modal > p { color: #94959b; font-size: 11px; line-height: 1.5; margin-top: 8px; }.receipt-total { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 22px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.04); text-align: left; }.receipt-total span:first-child { width: 100%; color: #85868c; font-size: 10px; }.receipt-total strong { font-family: var(--font-display); font-size: 32px; margin-right: auto; }.receipt-lines { border-top: 1px solid var(--border); margin-top: 17px; padding-top: 14px; display: flex; flex-direction: column; gap: 9px; }.receipt-lines div { display: flex; justify-content: space-between; gap: 10px; color: #a2a3a8; text-align: left; font-size: 10px; }.receipt-lines strong { color: #eee; }.receipt-footer { font-style: italic; }.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 21px; }.form-modal .modal-actions { justify-content: flex-end; }.form-modal .eyebrow { margin-top: 2px; }
@@ -457,6 +469,18 @@ kbd { color: #6b6c72; border: 1px solid rgba(255,255,255,.12); background: rgba(
 .compact-mode .product-card-meta { padding-top: 5px; padding-bottom: 7px; }
 .compact-mode .cart-items { max-height: 230px; }
 .compact-mode .cart-item { min-height: 61px; }
+
+.light-mode { --bg: #f3f4f6; --surface: #ffffff; --surface-2: #f7f7f8; --surface-3: #e9eaed; --border: rgba(15,23,42,.14); --muted: #5f6470; --muted-2: #737985; color: #202124; background: #f3f4f6; }
+.light-mode .app-shell { background: linear-gradient(125deg, #f8f9fa, #eef0f3); }
+.light-mode .sidebar, .light-mode .settings-card, .light-mode .table-card, .light-mode .panel-card { background: rgba(255,255,255,.92); }
+.light-mode .main-column { background: transparent; }
+.light-mode .nav-item, .light-mode .logout-button { color: #626773; }
+.light-mode .nav-item:hover, .light-mode .logout-button:hover { color: #202124; background: rgba(15,23,42,.06); }
+.light-mode h1, .light-mode h2, .light-mode h3, .light-mode h4, .light-mode .product-card-copy h4 { color: #202124; }
+.light-mode .product-card, .light-mode .admin-product-card { background: #fff; border-color: rgba(15,23,42,.15); }
+.light-mode .search-box, .light-mode .field-label input, .light-mode .field-label textarea, .light-mode .settings-card select, .light-mode .inventory-size-grid input { background: #fff; color: #202124; border-color: rgba(15,23,42,.18); }
+.light-mode .filter-chips button, .light-mode .filter-pills button { color: #626773; }
+.light-mode .filter-chips button.active, .light-mode .filter-pills button.active { color: #fff; }
 .compact-mode .checkout-panel { padding-top: 16px; }
 .online-payment-modal { width: min(500px, 100%); position: relative; padding: 25px; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: linear-gradient(145deg, #25262a, #17181a); box-shadow: 0 24px 70px rgba(0,0,0,.55); animation: modal-in .25s ease-out; }
 .online-modal-icon { width: 45px; height: 45px; display: grid; place-items: center; color: #b8adff; background: rgba(155,140,255,.13); border: 1px solid rgba(155,140,255,.35); border-radius: 12px; margin-bottom: 15px; }
