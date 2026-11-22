@@ -34,3 +34,6 @@ export const TrashIcon = makeIcon(<><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10
 export const SparkIcon = makeIcon(<><path d="m12 2 1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5L12 2Z"/></>)
 export const WalletIcon = makeIcon(<><path d="M4 5h16v14H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M16 12h4M5 5V3h12a2 2 0 0 1 2 2"/></>)
 export const ClipboardIcon = makeIcon(<><path d="M8 4h8M9 3h6v3H9z"/><path d="M7 5H5v16h14V5h-2M8 11h8M8 15h6"/></>)
+export const SunIcon = makeIcon(<><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></>)
+export const MoonIcon = makeIcon(<><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></>)
+export const BluetoothIcon = makeIcon(<><path d="m6.5 6.5 11 11L12 23V1l5.5 5.5-11 11"/></>)

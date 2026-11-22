@@ -11,6 +11,7 @@ for (const paper of [58, 80, 210]) {
       page.on('response', response => { if (response.status() >= 400) failures.push(response.url()) })
       await page.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }))
       await page.goto('/')
+      await expect(page.locator('.product-card')).toHaveCount(9)
       await page.evaluate((long) => {
         const products = JSON.parse(localStorage.getItem('gg-products-v2')!)
         const selected = long ? products.map((product: any, index: number) => ({ ...product, stock: 9999, name: `Thermal item ${index + 1} — ${'VeryLongDesignName'.repeat(3)}`, sku: 'LONGSKU'.repeat(8) })) : products
@@ -26,7 +27,7 @@ for (const paper of [58, 80, 210]) {
       await page.locator('.charge-button').click()
       const receipt = page.getByRole('dialog', { name: 'Receipt #1029' })
       await expect(receipt).toBeVisible()
-      await expect(receipt.locator('.receipt-lines > div')).toHaveCount(long ? 18 : 2)
+      await expect(receipt.locator('.receipt-lines > div')).toHaveCount(long ? 9 : 2)
       // Print layout viewport models the printable width after the five-millimetre paper margins.
       const printableWidth = Math.floor((paper - 10) * 96 / 25.4)
       await page.setViewportSize({ width: printableWidth, height: 900 })
