@@ -6352,3 +6352,356 @@ button,
     margin-bottom: 24px;
   }
 }
+
+/* ==========================================================================
+   KIOSK TABLET & FULL-SCALE POS UPGRADE
+   Big touch targets, chunky modals, readable cart & nav for kiosk tablets
+   ========================================================================== */
+@media (min-width: 721px) {
+  .app-shell {
+    grid-template-columns: 112px minmax(0, 1fr) minmax(350px, 410px);
+  }
+  .sidebar {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: 12px;
+  }
+  .brand-lockup {
+    width: 92px;
+    height: 58px;
+  }
+  .nav-item,
+  .theme-toggle {
+    min-height: 82px;
+    border-radius: 16px;
+    font-size: 13px;
+    gap: 8px;
+  }
+  .nav-item svg,
+  .theme-toggle svg {
+    width: 25px;
+    height: 25px;
+  }
+
+  /* Bigger, punchier Checkout / Cart Rail */
+  .checkout-panel {
+    padding: 22px 22px max(22px, env(safe-area-inset-bottom));
+  }
+  .tab-kicker {
+    font-size: 10.5px;
+  }
+  .checkout-header h2 {
+    font-size: 22px;
+  }
+  .test-print-pill {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+  .checkout-actions button:not(.test-print-pill) svg {
+    width: 20px;
+    height: 20px;
+  }
+  .order-items-heading {
+    font-size: 15.5px;
+    padding: 16px 2px 10px;
+  }
+  .order-items-heading b {
+    min-width: 22px;
+    height: 22px;
+    font-size: 11px;
+  }
+  .order-items-heading button {
+    font-size: 12px;
+  }
+  .cart-item {
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    min-height: 80px;
+    padding: 10px;
+    gap: 12px;
+    border-radius: 11px;
+  }
+  .cart-item-art {
+    width: 54px;
+    height: 58px;
+    border-radius: 9px;
+  }
+  .cart-jersey-thumb {
+    width: 48px;
+    height: 48px;
+  }
+  .cart-item-copy strong {
+    font-size: 13.5px;
+  }
+  .cart-item-copy > span {
+    font-size: 11px;
+  }
+  .qty-control {
+    gap: 10px;
+    margin-top: 5px;
+  }
+  .qty-control button {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+  }
+  .qty-control b {
+    font-size: 14px;
+    min-width: 16px;
+  }
+  .cart-item-price strong {
+    font-size: 14.5px;
+  }
+  .cart-item-price button svg {
+    width: 17px;
+    height: 17px;
+  }
+  .empty-cart {
+    min-height: 200px;
+  }
+  .empty-cart h3 {
+    font-size: 21px;
+  }
+  .empty-cart p {
+    max-width: 200px;
+    font-size: 12.5px;
+  }
+  .totals > div {
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  .totals strong {
+    font-size: 14.5px;
+  }
+  .totals .grand-total {
+    font-size: 22px;
+  }
+  .totals .grand-total strong {
+    font-size: 32px;
+  }
+  .payment-title {
+    font-size: 15.5px;
+  }
+  .payment-methods {
+    gap: 12px;
+  }
+  .payment-method {
+    min-height: 84px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    gap: 8px;
+  }
+  .payment-method svg {
+    width: 24px;
+    height: 24px;
+  }
+  .charge-button {
+    min-height: 66px;
+    border-radius: 13px;
+    font-size: 17px;
+    padding: 0 10px 0 20px;
+  }
+  .charge-arrow {
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+  }
+
+  /* Kiosk-scale Choose a Size Modal */
+  .size-modal {
+    width: min(680px, 94vw);
+    padding: 32px;
+    border-radius: 18px;
+  }
+  .size-modal .modal-step {
+    font-size: 11px;
+  }
+  .size-modal h2 {
+    font-size: 38px;
+  }
+  .size-modal > p {
+    font-size: 14px;
+  }
+  .size-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+  }
+  .size-option {
+    min-height: 68px;
+    border-radius: 11px;
+    font-size: 18px;
+    padding: 8px;
+  }
+  .size-option small {
+    font-size: 11.5px;
+    margin-top: 4px;
+  }
+  .size-cancel {
+    margin-top: 20px;
+    min-height: 52px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+
+  /* Kiosk-scale Online Payment, Product & Test Print Modals */
+  .online-payment-modal {
+    width: min(580px, 94vw);
+    padding: 28px;
+    border-radius: 18px;
+  }
+  .online-payment-modal h2 {
+    font-size: 34px;
+  }
+  .online-payment-modal > p {
+    font-size: 13px;
+  }
+  .provider-grid {
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .provider-chip {
+    min-height: 52px;
+    padding: 0 13px;
+    border-radius: 10px;
+    font-size: 13.5px;
+  }
+  .receipt-upload-label {
+    padding: 15px;
+    border-radius: 11px;
+  }
+  .receipt-upload-label strong {
+    font-size: 13.5px;
+  }
+  .receipt-upload-label small {
+    font-size: 11.5px;
+  }
+  .form-modal:not(.size-modal) {
+    width: min(540px, 94vw);
+    padding: 28px;
+  }
+  .field-label {
+    font-size: 11.5px;
+  }
+  .field-label input,
+  .field-label textarea {
+    padding: 13px 14px;
+    font-size: 15px;
+    border-radius: 9px;
+  }
+  .inventory-size-grid label {
+    font-size: 11.5px;
+  }
+  .inventory-size-grid input {
+    padding: 10px 8px;
+    font-size: 14px;
+  }
+  .test-print-modal {
+    width: min(760px, 94vw);
+  }
+  .printer-option-btn {
+    min-height: 54px;
+    font-size: 15px;
+  }
+  .ghost-button,
+  .primary-button,
+  .danger-button {
+    min-height: 44px;
+    padding: 11px 18px;
+    font-size: 13.5px;
+    border-radius: 10px;
+  }
+
+  /* Bigger, clearer Products Admin Cards */
+  .product-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .admin-product-card {
+    grid-template-columns: 138px 1fr;
+    min-height: 168px;
+    border-radius: 14px;
+  }
+  .admin-product-color.has-image {
+    min-height: 168px;
+  }
+  .admin-product-color.has-image .product-jersey-img {
+    height: 116px;
+  }
+  .admin-product-info {
+    padding: 18px 14px 14px 16px;
+  }
+  .admin-product-info h3 {
+    font-size: 16px;
+  }
+  .admin-product-info p {
+    font-size: 11.5px;
+  }
+  .admin-product-bottom strong {
+    font-size: 26px;
+  }
+  .stock-badge {
+    font-size: 12px;
+  }
+  .latest-sale span,
+  .latest-sale small {
+    font-size: 11px;
+  }
+  .admin-add-button {
+    min-height: 38px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    border-radius: 8px;
+  }
+  .card-edit {
+    right: 10px;
+    top: 10px;
+    padding: 7px;
+  }
+  .card-delete {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+  }
+  .kpi-card strong {
+    font-size: 32px;
+  }
+  .segmented-tabs button {
+    padding: 9px 15px;
+    font-size: 13px;
+  }
+  .payment-filter-chips button {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+}
+
+@media (min-width: 1480px) {
+  .product-admin-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1020px) {
+  .app-shell {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .checkout-panel {
+    width: min(410px, 92vw);
+  }
+}
+
+/* Keep every jersey card title on a single unclipped line scaled to card width */
+.product-card {
+  container-type: inline-size;
+}
+.product-card-copy {
+  padding: 4px 6px 12px;
+}
+.product-card-copy h4 {
+  font-size: clamp(11px, 9.5cqi, 17px);
+  line-height: 1.1;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  text-wrap: nowrap;
+  overflow: visible;
+}
