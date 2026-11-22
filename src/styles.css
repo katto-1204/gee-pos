@@ -6341,3 +6341,14 @@ button,
     grid-template-columns: 86px minmax(0, 1fr);
   }
 }
+
+/* Bottom breathing room below the 3x3 jersey grid */
+@media (min-width: 721px) {
+  .dashboard-page {
+    padding-bottom: 36px;
+  }
+  .product-grid {
+    max-width: min(100%, calc(100dvh - 148px));
+    margin-bottom: 24px;
+  }
+}
