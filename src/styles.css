@@ -7335,3 +7335,34 @@ button,
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* Consistent button sizing & alignment across Settings cards and confirmation modals */
+.danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+.danger-actions > button,
+.bt-required-card .modal-actions > button {
+  margin-top: 0 !important;
+  min-height: 46px;
+  height: 46px;
+  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  line-height: 1;
+}
+.bt-required-card .modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 20px;
+}
+.bt-required-card .modal-actions > button {
+  width: 100%;
+}
