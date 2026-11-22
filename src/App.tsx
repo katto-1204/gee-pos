@@ -973,6 +973,7 @@ function App() {
         btPrinting={btPrinting}
         btStatus={btStatus}
         onPairBt={pairBluetoothPrinter}
+        onCancelPair={() => setBtPairing(false)}
         onBtPrint={() => {
           void sendBluetoothReceipt(receipt).then((ok) => {
             if (ok) {
@@ -1378,7 +1379,7 @@ function PaymentBar({ label, value, total, color, icon }: { label: string; value
 
 function ToggleRow({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) { return <div className="toggle-row"><div><strong>{label}</strong><p>{description}</p></div><button className={cx('toggle', value && 'on')} onClick={() => onChange(!value)} aria-label={`Toggle ${label}`}><i /></button></div> }
 
-  function ReceiptModal({ order, settings, btPrinter, btPairing, btPrinting, btStatus, onPairBt, onBtPrint, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; btPairing: boolean; btPrinting: boolean; btStatus: string; onPairBt: () => void; onBtPrint: () => void; onPrinted?: () => void; onClose: () => void }) {
+  function ReceiptModal({ order, settings, btPrinter, btPairing, btPrinting, btStatus, onPairBt, onCancelPair, onBtPrint, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; btPairing: boolean; btPrinting: boolean; btStatus: string; onPairBt: () => void; onCancelPair?: () => void; onBtPrint: () => void; onPrinted?: () => void; onClose: () => void }) {
     const createdAt = new Date(order.createdAt)
     const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
     const canSkip = Boolean(order.justPaid && !order.successShown)
@@ -1451,7 +1452,7 @@ function ToggleRow({ label, description, value, onChange }: { label: string; des
             <p>{btPairing ? 'Searching for your Bluetooth thermal printer...' : 'No Bluetooth printer is connected yet. Connect your printer to print this receipt.'}</p>
             {btStatus && <small className="bt-required-status">{btStatus}</small>}
             <div className="modal-actions">
-              <button type="button" className="ghost-button" onClick={() => setNeedBtPrompt(false)}>Cancel</button>
+              <button type="button" className="ghost-button" onClick={() => { setNeedBtPrompt(false); onCancelPair?.() }}>Cancel</button>
               <button type="button" className="primary-button" onClick={onPairBt} disabled={btPairing}>
                 <BluetoothIcon size={16} /> {btPairing ? 'Searching...' : 'Search BT Printer'}
               </button>
