@@ -854,7 +854,6 @@ function App() {
       return
     }
     try {
-      await btPrinter.sendBytes(buildEscPosReceipt(order, settings))
       const payload = await buildEscPosReceipt(order, settings)
       await btPrinter.sendBytes(payload)
       notify(`Sent receipt to ${btPrinter.name}`)
