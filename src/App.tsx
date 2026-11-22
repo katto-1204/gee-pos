@@ -19,7 +19,7 @@ import {
 
 type Page = 'home' | 'products' | 'orders' | 'customers' | 'reports' | 'settings'
 type CategoryFilter = ProductCategory | 'all'
-type Receipt = Order & { isDraft?: boolean; justPaid?: boolean; successShown?: boolean }
+type Receipt = Order & { isDraft?: boolean; justPaid?: boolean; successShown?: boolean; printedOnce?: boolean }
 type BtPrinterState = {
   name: string
   connected: boolean
@@ -77,7 +77,7 @@ function playPaymentSuccessSound() {
   }
 }
 
-async function buildEscPosLogo(src: string, maxWidth = 288): Promise<Uint8Array> {
+async function buildEscPosLogo(src: string, maxWidth = 240): Promise<Uint8Array[]> {
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image()
@@ -86,42 +86,68 @@ async function buildEscPosLogo(src: string, maxWidth = 288): Promise<Uint8Array>
       el.onerror = () => reject(new Error('Logo load failed'))
       el.src = src
     })
-    const width = Math.min(maxWidth, Math.floor((img.naturalWidth || maxWidth) / 8) * 8) || 288
+    const width = Math.min(maxWidth, Math.floor((img.naturalWidth || maxWidth) / 8) * 8) || 240
     const height = Math.max(16, Math.round((img.naturalHeight / Math.max(img.naturalWidth, 1)) * width))
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
     const ctx = canvas.getContext('2d')
-    if (!ctx) return new Uint8Array(0)
+    if (!ctx) return []
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, width, height)
     ctx.drawImage(img, 0, 0, width, height)
     const { data } = ctx.getImageData(0, 0, width, height)
     const widthBytes = width / 8
-    const raster = new Uint8Array(widthBytes * height)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (y * width + x) * 4
-        const lum = (data[idx] + data[idx + 1] + data[idx + 2]) / 3
-        if (lum < 160) {
-          raster[y * widthBytes + (x >> 3)] |= 0x80 >> (x & 7)
+    const bandHeight = 16
+    const bands: Uint8Array[] = [new Uint8Array([0x1b, 0x61, 0x01, 0x1b, 0x33, 0x00])] // Center + 0 line spacing between bands
+
+    for (let startY = 0; startY < height; startY += bandHeight) {
+      const rows = Math.min(bandHeight, height - startY)
+      const raster = new Uint8Array(widthBytes * rows)
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = ((startY + y) * width + x) * 4
+          const lum = (data[idx] + data[idx + 1] + data[idx + 2]) / 3
+          if (lum < 160) {
+            raster[y * widthBytes + (x >> 3)] |= 0x80 >> (x & 7)
+          }
         }
       }
+      const header = new Uint8Array([
+        0x1d, 0x76, 0x30, 0x00, // GS v 0 normal raster
+        widthBytes & 0xff, (widthBytes >> 8) & 0xff,
+        rows & 0xff, (rows >> 8) & 0xff,
+      ])
+      const band = new Uint8Array(header.length + raster.length)
+      band.set(header, 0)
+      band.set(raster, header.length)
+      bands.push(band)
     }
-    const header = new Uint8Array([
-      0x1b, 0x61, 0x01, // Center align
-      0x1d, 0x76, 0x30, 0x00, // GS v 0 normal raster
-      widthBytes & 0xff, (widthBytes >> 8) & 0xff,
-      height & 0xff, (height >> 8) & 0xff,
-    ])
-    const out = new Uint8Array(header.length + raster.length + 1)
-    out.set(header, 0)
-    out.set(raster, header.length)
-    out[out.length - 1] = 0x0a
-    return out
+    bands.push(new Uint8Array([0x1b, 0x32, 0x0a])) // Reset default line spacing + newline
+    return bands
   } catch {
-    return new Uint8Array(0)
+    return []
   }
+}
+
+function wrapEscPosText(text: string, width = 32): string {
+  return text.split('\n').map((paragraph) => {
+    const words = paragraph.trim().split(/\s+/)
+    const lines: string[] = []
+    let line = ''
+    for (const word of words) {
+      if (!line) {
+        line = word
+      } else if (line.length + 1 + word.length <= width) {
+        line += ` ${word}`
+      } else {
+        lines.push(line)
+        line = word
+      }
+    }
+    if (line) lines.push(line)
+    return lines.join('\n')
+  }).join('\n')
 }
 
 function padEscPosRow(left: string, right: string, width = 32): string {
@@ -129,16 +155,14 @@ function padEscPosRow(left: string, right: string, width = 32): string {
   return `${left}${' '.repeat(space)}${right}`
 }
 
-async function buildEscPosReceipt(order: Receipt, settings: Settings): Promise<Uint8Array> {
+async function buildEscPosReceipt(order: Receipt, settings: Settings): Promise<Uint8Array[]> {
   const enc = new TextEncoder()
-  const logo = await buildEscPosLogo('/icons/gee-logo-black.png')
+  const logoBands = await buildEscPosLogo('/icons/gee-logo-black.png')
   const createdAt = new Date(order.createdAt)
   const dateStr = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(createdAt)
   const timeStr = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(createdAt)
 
-  const chunks: Uint8Array[] = [
-    new Uint8Array([0x1b, 0x40]), // Initialize printer
-    logo,
+  const textChunks: Uint8Array[] = [
     new Uint8Array([0x1b, 0x61, 0x01, 0x1b, 0x45, 0x01]), // Center + Bold
     enc.encode(`${settings.storeName.toUpperCase()}\n`),
     new Uint8Array([0x1b, 0x45, 0x00]),
@@ -161,24 +185,24 @@ async function buildEscPosReceipt(order: Receipt, settings: Settings): Promise<U
     enc.encode(`${padEscPosRow('Payment', order.onlinePayment ? `${order.paymentMethod} (${order.onlinePayment.provider})` : order.paymentMethod)}\n`),
     enc.encode('--------------------------------\n'),
     new Uint8Array([0x1b, 0x61, 0x01]), // Center
-    enc.encode(`${settings.receiptFooter}\n`),
+    enc.encode(`${wrapEscPosText(settings.receiptFooter, 32)}\n`),
     new Uint8Array([0x1b, 0x45, 0x01]),
     enc.encode('*** THANK YOU FOR SHOPPING ***\n\n\n\n'),
     new Uint8Array([0x1d, 0x56, 0x42, 0x00]), // Paper cut
   ]
 
-  const totalLen = chunks.reduce((sum, c) => sum + c.length, 0)
-  const out = new Uint8Array(totalLen)
+  const totalLen = textChunks.reduce((sum, c) => sum + c.length, 0)
+  const textBody = new Uint8Array(totalLen)
   let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
+  for (const chunk of textChunks) {
+    textBody.set(chunk, offset)
     offset += chunk.length
   }
-  return out
+  return [new Uint8Array([0x1b, 0x40]), ...logoBands, textBody]
 }
 
 const STORAGE = {
-  products: 'gg-products-v2',
+  products: 'gg-products-v3',
   cart: 'gg-cart-v1',
   customers: 'gg-customers-v1',
   orders: 'gg-orders-v1',
@@ -251,9 +275,10 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 function distributeStock(total: number): Record<string, number> {
   const sizeStock = Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0]))
+  const standardSizes = ['XS', 'S', 'M', 'L', 'XL', '2XL']
   let remaining = Math.max(0, total)
-  SHIRT_SIZES.forEach((size, index) => {
-    const allocation = Math.ceil(remaining / (SHIRT_SIZES.length - index))
+  standardSizes.forEach((size, index) => {
+    const allocation = Math.ceil(remaining / (standardSizes.length - index))
     sizeStock[size] = Math.min(remaining, allocation)
     remaining -= sizeStock[size]
   })
@@ -301,6 +326,7 @@ function App() {
   const [showOnlinePayment, setShowOnlinePayment] = useState(false)
   const [btPrinter, setBtPrinter] = useState<BtPrinterState | null>(null)
   const [btPairing, setBtPairing] = useState(false)
+  const [btPrinting, setBtPrinting] = useState(false)
   const [btStatus, setBtStatus] = useState('')
   const [showTestPrint, setShowTestPrint] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState<{ number: string; total: number; method: PaymentMethod } | null>(null)
@@ -438,7 +464,7 @@ function App() {
                     } else {
                       await writeChar.writeValue(chunk)
                     }
-                    await new Promise((resolve) => window.setTimeout(resolve, 15))
+                    await new Promise((resolve) => window.setTimeout(resolve, 22))
                   }
                 }
                 setBtPrinter({
@@ -592,15 +618,18 @@ function App() {
       setCustomers((current) => current.map((item) => item.id === customer.id ? { ...item, orders: item.orders + 1, totalSpent: item.totalSpent + total } : item))
     }
     setCart([])
+    setToast('')
     setSelectedCustomerId('')
     setOnlinePayment(undefined)
     if (btPrinter?.connected) {
-      setReceipt({ ...order, justPaid: true, successShown: true })
-      void sendBluetoothReceipt(order).then(() => {
-        triggerPaymentSuccess(order)
+      setReceipt({ ...order, justPaid: true, successShown: false, printedOnce: false })
+      void sendBluetoothReceipt(order).then((ok) => {
+        if (ok) {
+          setReceipt((current) => current && current.id === order.id ? { ...current, printedOnce: true } : current)
+        }
       })
     } else {
-      setReceipt({ ...order, justPaid: true, successShown: false })
+      setReceipt({ ...order, justPaid: true, successShown: false, printedOnce: false })
     }
   }
 
@@ -627,6 +656,14 @@ function App() {
     setAuditLogs([])
     recordAudit('POS reset', 'Catalog, records, and settings restored to demo data')
     notify('Local POS data reset')
+  }
+
+  const resetInventory = () => {
+    if (!window.confirm('Reset all jersey stock back to default (XS–2XL: 2 each, 3XL–5XL: 0)?')) return
+    setProducts(seedProducts.map((product) => ({ ...product, sizeStock: product.sizeStock ? { ...product.sizeStock } : undefined })))
+    setCart([])
+    recordAudit('Inventory reset', 'All 9 jerseys reset to default size stock (XS–2XL: 2 each, 3XL–5XL: 0)')
+    notify('Inventory reset to default')
   }
 
   const clearRecords = () => {
@@ -768,7 +805,7 @@ function App() {
           } else {
             await writeChar.writeValue(chunk)
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 15))
+          await new Promise((resolve) => window.setTimeout(resolve, 22))
         }
       } : undefined
       setBtPrinter({
@@ -843,24 +880,33 @@ function App() {
     }
   }
 
-  const sendBluetoothReceipt = async (order: Receipt) => {
+  const sendBluetoothReceipt = async (order: Receipt): Promise<boolean> => {
     if (!btPrinter?.connected) {
       setShowTestPrint(true)
-      return
+      return false
     }
     if (!btPrinter.sendBytes) {
       setBtStatus(`Connected to ${btPrinter.name}, but no printable Bluetooth write characteristic was found.`)
       notify(`${btPrinter.name} has no printable Bluetooth channel`)
-      return
+      return false
     }
+    setBtPrinting(true)
     try {
-      const payload = await buildEscPosReceipt(order, settings)
-      await btPrinter.sendBytes(payload)
+      const segments = await buildEscPosReceipt(order, settings)
+      for (const segment of segments) {
+        if (!segment.length) continue
+        await btPrinter.sendBytes(segment)
+        await new Promise((resolve) => window.setTimeout(resolve, 80))
+      }
       notify(`Sent receipt to ${btPrinter.name}`)
       setBtStatus(`Sent to ${btPrinter.name}.`)
+      return true
     } catch {
       setBtStatus('Could not send directly over Bluetooth. Check printer connection.')
       notify('Bluetooth print failed — check printer')
+      return false
+    } finally {
+      setBtPrinting(false)
     }
   }
 
@@ -898,12 +944,12 @@ function App() {
       {page === 'home' && <DashboardPage products={products} setCategory={setCategory} addToCart={addToCart} goTo={goTo} />}
       {page === 'products' && <ProductsPage products={products} orders={orders} addToCart={addToCart} onEdit={setEditingProduct} onCreate={() => setCreatingProduct(true)} onDelete={deleteProduct} />}
       {page === 'orders' && <OrdersPage orders={orders} products={products} auditLogs={auditLogs} onOpenReceipt={(order) => setReceipt(order)} />}
-      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onClearRecords={clearRecords} onExport={exportData} onImport={() => importInput.current?.click()} btPrinter={btPrinter} onOpenTestPrint={() => { setBtStatus(''); setShowTestPrint(true) }} />}
+      {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onResetInventory={resetInventory} onClearRecords={clearRecords} onExport={exportData} onImport={() => importInput.current?.click()} btPrinter={btPrinter} onOpenTestPrint={() => { setBtStatus(''); setShowTestPrint(true) }} />}
     </main>
 
     {(page === 'home' || page === 'products') && <>
       <button className="mobile-cart-fab" onClick={() => setMobileCartOpen(true)}><ReceiptIcon size={20} /><span>{cart.length}</span><b>{money(total)}</b></button>
-      <CartPanel cartDetails={cartDetails} subtotal={subtotal} tax={tax} total={total} payment={payment} onChooseCash={() => setPayment('Cash')} onChooseOnline={() => { setPayment('Online'); setShowOnlinePayment(true) }} onlinePayment={onlinePayment} customer={selectedCustomer} customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId} customerPickerOpen={customerPickerOpen} setCustomerPickerOpen={setCustomerPickerOpen} customerSearch={customerSearch} setCustomerSearch={setCustomerSearch} onAddCustomer={() => setShowCustomerForm(true)} updateQuantity={updateQuantity} removeFromCart={removeFromCart} chargeCustomer={chargeCustomer} previewReceipt={previewReceipt} btPrinter={btPrinter} onOpenTestPrint={() => { setBtStatus(''); setShowTestPrint(true) }} mobileOpen={mobileCartOpen} setMobileOpen={setMobileCartOpen} />
+      <CartPanel cartDetails={cartDetails} subtotal={subtotal} tax={tax} total={total} payment={payment} onChooseCash={() => setPayment('Cash')} onChooseOnline={() => { setPayment('Online'); setShowOnlinePayment(true) }} onlinePayment={onlinePayment} customer={selectedCustomer} customers={customers} selectedCustomerId={selectedCustomerId} setSelectedCustomerId={setSelectedCustomerId} customerPickerOpen={customerPickerOpen} setCustomerPickerOpen={setCustomerPickerOpen} customerSearch={customerSearch} setCustomerSearch={setCustomerSearch} onAddCustomer={() => setShowCustomerForm(true)} updateQuantity={updateQuantity} removeFromCart={removeFromCart} chargeCustomer={chargeCustomer} previewReceipt={previewReceipt} btPrinter={btPrinter} btPrinting={btPrinting} onOpenTestPrint={() => { setBtStatus(''); setShowTestPrint(true) }} mobileOpen={mobileCartOpen} setMobileOpen={setMobileCartOpen} />
     </>}
 
     {toast && <div className="toast"><span className="toast-icon"><CheckIcon size={16} /></span>{toast}</div>}
@@ -923,12 +969,19 @@ function App() {
         order={receipt}
         settings={settings}
         btPrinter={btPrinter}
-        onBtPrint={() => void sendBluetoothReceipt(receipt)}
+        btPairing={btPairing}
+        btPrinting={btPrinting}
+        btStatus={btStatus}
+        onPairBt={pairBluetoothPrinter}
+        onBtPrint={() => {
+          void sendBluetoothReceipt(receipt).then((ok) => {
+            if (ok) {
+              setReceipt((current) => current ? { ...current, printedOnce: true } : null)
+            }
+          })
+        }}
         onPrinted={() => {
-          if (receipt.justPaid && !receipt.successShown) {
-            setReceipt((current) => current ? { ...current, successShown: true } : null)
-            triggerPaymentSuccess(receipt)
-          }
+          setReceipt((current) => current ? { ...current, printedOnce: true } : null)
         }}
         onClose={() => {
           const pending = receipt.justPaid && !receipt.successShown ? receipt : null
@@ -1173,8 +1226,8 @@ function ReportsPage({ orders, products }: { orders: Order[]; products: Product[
   return <div className="page-content listing-page"><PageIntro eyebrow="Signals, not spreadsheets" title="Reports" description="A clear read on the local sales data in your POS." action={<button className="ghost-button"><PrinterIcon size={16} /> Print report</button>} /><div className="report-hero"><div><span className="eyebrow">All-time gross sales</span><strong>{money(gross)}</strong><p><span className={cx('green-copy', gross === 0 && 'muted-stat')}>{gross === 0 ? 'Ready for first sale' : '+14.2%'}</span> compared to last period</p></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><span /></div></div><div className="report-grid"><div className="panel-card"><div className="panel-heading"><div><span className="eyebrow">Revenue mix</span><h3>Payment methods</h3></div><MoreIcon size={19} /></div><div className="payment-bars"><PaymentBar label="Cash" value={cash} color="red" total={gross || 1} icon={<BanknoteIcon size={17} />} /><PaymentBar label="Online" value={online} color="violet" total={gross || 1} icon={<WalletIcon size={17} />} /></div></div><div className="panel-card inventory-panel"><div className="panel-heading"><div><span className="eyebrow">Inventory lens</span><h3>Stock on hand</h3></div><PackageIcon size={19} /></div>  <div className="stock-list">{inventory.map((product) => <div className="stock-line" key={product.id}>{product.image ? <span className="stock-jersey-thumb" style={{ background: `radial-gradient(circle at 50% 50%, ${product.accent}33, #17181b)` }}><img src={product.image} alt={product.name} /></span> : <span className="stock-color" style={{ background: product.accent }} />}<div><strong>{displayProductName(product.name)}</strong><span>{product.sku}</span></div><b className={cx(product.stock < 10 && 'low')}>{product.stock}</b></div>)}</div></div></div></div>
 }
 
-function SettingsPage({ settings, updateSettings, onClearRecords, onExport, onImport, btPrinter, onOpenTestPrint }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onClearRecords: () => void; onExport: () => void; onImport: () => void; btPrinter: BtPrinterState | null; onOpenTestPrint: () => void }) {
-  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" inputMode="decimal" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Light mode" description="Use a brighter theme for daytime work." value={settings.lightMode} onChange={(value) => updateSettings({ lightMode: value })} /><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card"><div className="panel-heading"><div><h3>Receipt printer</h3></div><PrinterIcon size={19} /></div><p className="printer-summary">{btPrinter?.connected ? `Connected to ${btPrinter.name}.` : 'No Bluetooth printer connected. Pair a nearby Bluetooth thermal printer or run a manual test print.'}</p><div className="danger-actions"><button className="primary-button" onClick={onOpenTestPrint}><PrinterIcon size={15} /> {btPrinter?.connected ? 'Printer & Test Print' : 'Test Print'}</button>{btPrinter?.connected && btPrinter.disconnect && <button className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}</div></section><section className="settings-card"><div className="panel-heading"><div><h3>Backup data</h3></div><DownloadIcon size={19} /></div><p>Export all transactions, products, customers, settings, and audit history to a JSON file. Import it later to restore this POS.</p><div className="danger-actions"><button className="primary-button" onClick={onExport}>Export JSON</button><button className="ghost-button" onClick={onImport}>Import JSON</button></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Clear sales records without removing your catalog.</p><button className="danger-button" onClick={onClearRecords}>Clear sales records</button></section></div></div>
+function SettingsPage({ settings, updateSettings, onResetInventory, onClearRecords, onExport, onImport, btPrinter, onOpenTestPrint }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onResetInventory: () => void; onClearRecords: () => void; onExport: () => void; onImport: () => void; btPrinter: BtPrinterState | null; onOpenTestPrint: () => void }) {
+  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" inputMode="decimal" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Light mode" description="Use a brighter theme for daytime work." value={settings.lightMode} onChange={(value) => updateSettings({ lightMode: value })} /><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card"><div className="panel-heading"><div><h3>Receipt printer</h3></div><PrinterIcon size={19} /></div><p className="printer-summary">{btPrinter?.connected ? `Connected to ${btPrinter.name}.` : 'No Bluetooth printer connected. Pair a nearby Bluetooth thermal printer or run a manual test print.'}</p><div className="danger-actions"><button className="primary-button" onClick={onOpenTestPrint}><PrinterIcon size={15} /> {btPrinter?.connected ? 'Printer & Test Print' : 'Test Print'}</button>{btPrinter?.connected && btPrinter.disconnect && <button className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}</div></section><section className="settings-card"><div className="panel-heading"><div><h3>Backup data</h3></div><DownloadIcon size={19} /></div><p>Export all transactions, products, customers, settings, and audit history to a JSON file. Import it later to restore this POS.</p><div className="danger-actions"><button className="primary-button" onClick={onExport}>Export JSON</button><button className="ghost-button" onClick={onImport}>Import JSON</button></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Reset jersey inventory to default (XS–2XL: 2 each, 3XL–5XL: 0) or clear sales records.</p><div className="danger-actions"><button className="ghost-button" onClick={onResetInventory}>Reset inventory</button><button className="danger-button" onClick={onClearRecords}>Clear sales records</button></div></section></div></div>
 }
 
 function PageIntro({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
@@ -1219,7 +1272,54 @@ function ProductColorBlock({ product, admin = false }: { product: Product; admin
 
 function SizeModal({ product, cart, onClose, onChoose }: { product: Product; cart: CartLine[]; onClose: () => void; onChoose: (size: string) => void }) {
   const sizeStock = getSizeStock(product)
-  return <div className="modal-backdrop"><div className="form-modal size-modal" role="dialog" aria-modal="true" aria-labelledby="size-modal-title"><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="modal-step">Step 1 of 1</span><h2 id="size-modal-title">Choose a size</h2><p>Select the size to add to the sale.</p><div className="size-grid">{SHIRT_SIZES.map((size) => { const reserved = cart.filter((line) => line.productId === product.id && line.size === size).reduce((sum, line) => sum + line.quantity, 0); const available = Math.max(0, (sizeStock[size] ?? 0) - reserved); return <button type="button" className="size-option" disabled={!available} key={size} onClick={() => onChoose(size)}><strong>{size}</strong><small>{available} available</small></button> })}</div><button type="button" className="ghost-button size-cancel" onClick={onClose}>Cancel</button></div></div>
+  const sizeItems = SHIRT_SIZES.map((size) => {
+    const reserved = cart.filter((line) => line.productId === product.id && line.size === size).reduce((sum, line) => sum + line.quantity, 0)
+    const available = Math.max(0, (sizeStock[size] ?? 0) - reserved)
+    return { size, available }
+  })
+  const availableSizes = sizeItems.filter((item) => item.available > 0)
+  const unavailableSizes = sizeItems.filter((item) => item.available === 0)
+
+  return <div className="modal-backdrop">
+    <div className="form-modal size-modal" role="dialog" aria-modal="true" aria-labelledby="size-modal-title">
+      <button type="button" className="modal-close" onClick={onClose} aria-label="Close size picker"><XIcon size={19} /></button>
+      <span className="modal-step">Step 1 of 1</span>
+      <h2 id="size-modal-title">Choose a size</h2>
+      <p>Select an available size for {displayProductName(product.name)}.</p>
+
+      {availableSizes.length > 0 ? (
+        <div className="size-section">
+          <span className="size-section-label">Available</span>
+          <div className="size-grid">
+            {availableSizes.map(({ size, available }) => (
+              <button type="button" className="size-option" key={size} onClick={() => onChoose(size)}>
+                <strong>{size}</strong>
+                <small>{available} available</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="size-empty-note">All sizes are currently out of stock.</p>
+      )}
+
+      {unavailableSizes.length > 0 && (
+        <div className="size-section unavailable">
+          <span className="size-section-label">Not available</span>
+          <div className="size-grid size-grid-unavailable">
+            {unavailableSizes.map(({ size }) => (
+              <button type="button" className="size-option unavailable" disabled key={size}>
+                <strong>{size}</strong>
+                <small>Out of stock</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button type="button" className="ghost-button size-cancel" onClick={onClose}>Cancel</button>
+    </div>
+  </div>
 }
 
 function ProductArt({ kind, accent, accent2, tiny = false }: { kind: ProductKind; accent: string; accent2: string; small?: boolean; tiny?: boolean }) {
@@ -1230,7 +1330,7 @@ function ProductArt({ kind, accent, accent2, tiny = false }: { kind: ProductKind
   return <div className={cx('product-art', 'shirt-art', kind === 'set' && 'set-art', tiny && 'tiny-art')} style={style}><div className="shirt-back" /><div className="shirt-body"><i className="shirt-sleeve left" /><i className="shirt-sleeve right" /><div className="shirt-neck" /><span>{kind === 'set' ? 'SET' : '88'}</span></div>{kind === 'set' && <div className="mini-bandana" />}</div>
 }
 
-function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, previewReceipt, btPrinter, onOpenTestPrint, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number, size?: string) => void; removeFromCart: (id: string, size?: string) => void; chargeCustomer: () => void; previewReceipt: () => void; btPrinter: BtPrinterState | null; onOpenTestPrint: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
+function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, onChooseOnline, onlinePayment, customer, customers, selectedCustomerId, setSelectedCustomerId, customerPickerOpen, setCustomerPickerOpen, customerSearch, setCustomerSearch, onAddCustomer, updateQuantity, removeFromCart, chargeCustomer, previewReceipt, btPrinter, btPrinting, onOpenTestPrint, mobileOpen, setMobileOpen }: { cartDetails: Array<CartLine & { product: Product }>; subtotal: number; tax: number; total: number; payment: PaymentMethod; onChooseCash: () => void; onChooseOnline: () => void; onlinePayment?: OnlinePaymentDetails; customer?: Customer; customers: Customer[]; selectedCustomerId: string; setSelectedCustomerId: (value: string) => void; customerPickerOpen: boolean; setCustomerPickerOpen: (value: boolean) => void; customerSearch: string; setCustomerSearch: (value: string) => void; onAddCustomer: () => void; updateQuantity: (id: string, delta: number, size?: string) => void; removeFromCart: (id: string, size?: string) => void; chargeCustomer: () => void; previewReceipt: () => void; btPrinter: BtPrinterState | null; btPrinting: boolean; onOpenTestPrint: () => void; mobileOpen: boolean; setMobileOpen: (value: boolean) => void }) {
   const customerResults = customers.filter((item) => item.name.toLowerCase().includes(customerSearch.toLowerCase())).slice(0, 4)
   return <aside className={cx('checkout-panel', mobileOpen && 'mobile-open')}>
     <div className="checkout-header">
@@ -1268,7 +1368,7 @@ function CartPanel({ cartDetails, subtotal, tax, total, payment, onChooseCash, o
     </div>
     <div className="totals"><div><span>Sub total</span><strong>{money(subtotal)}</strong></div><div><span>Tax ({tax === 0 ? '0' : ((tax / Math.max(subtotal, 1)) * 100).toFixed(0)}%)</span><strong>{money(tax)}</strong></div><div className="grand-total"><span>Total</span><strong>{money(total)}</strong></div></div>
     <div className="payment-section"><div className="payment-title"><span>Payment method</span><button><MoreIcon size={17} /></button></div><div className="payment-methods"><button className={cx('payment-method', payment === 'Cash' && 'selected')} onClick={onChooseCash}><BanknoteIcon size={21} /><span>Cash</span></button><button className={cx('payment-method', payment === 'Online' && 'selected')} onClick={onChooseOnline}><WalletIcon size={21} /><span>Online</span>{onlinePayment && <small className="payment-ready">{onlinePayment.provider} ready</small>}</button></div></div>
-    <button className="charge-button" onClick={chargeCustomer}><span>Charge customer {money(total)}</span><span className="charge-arrow"><ArrowRightIcon size={19} /></span></button>
+    <button className="charge-button" onClick={chargeCustomer} disabled={btPrinting}><span>{btPrinting ? 'Printing...' : `Charge customer ${money(total)}`}</span><span className="charge-arrow"><ArrowRightIcon size={19} /></span></button>
   </aside>
 }
 
@@ -1278,313 +1378,345 @@ function PaymentBar({ label, value, total, color, icon }: { label: string; value
 
 function ToggleRow({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) { return <div className="toggle-row"><div><strong>{label}</strong><p>{description}</p></div><button className={cx('toggle', value && 'on')} onClick={() => onChange(!value)} aria-label={`Toggle ${label}`}><i /></button></div> }
 
-function ReceiptModal({ order, settings, btPrinter, onBtPrint, onPrinted, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; onBtPrint: () => void; onPrinted?: () => void; onClose: () => void }) {
-  const createdAt = new Date(order.createdAt)
-  const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
-  return <div className="modal-backdrop receipt-backdrop"><div className="receipt-modal" role="dialog" aria-modal="true" aria-label={`Receipt ${order.number}`}>
-    <div className="receipt-success"><span><CheckIcon size={15} /> {order.isDraft ? 'Current sale preview' : 'Sale complete'}</span><button onClick={onClose} aria-label="Close receipt"><XIcon size={18} /></button></div>
-    <article className="receipt-paper">
-      <header className="receipt-heading">
-        <img className="receipt-logo-img" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
-        <div className="receipt-banner">
-          <img className="receipt-logo-img screen-logo" src="/icons/gee-logo-white.png" alt="Gee Graphics" />
-          <img className="receipt-logo-img print-logo" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
-          <span className="receipt-tagline">OFFICIAL MERCH · POINT OF SALE</span>
-        </div>
-        <h3 className="receipt-store">{settings.storeName}</h3>
-        <p className="receipt-label">{order.isDraft ? 'UNPAID · CURRENT SALE' : 'SALES RECEIPT'}</p>
-        <div className="receipt-badge-row">
-          <p className="receipt-label">{order.isDraft ? 'UNPAID · CURRENT SALE' : 'SALES RECEIPT'}</p>
-          {!order.isDraft && <span className="receipt-paid-stamp">PAID</span>}
-        </div>
-      </header>
-      <dl className="receipt-meta">
-        <div><dt>{order.isDraft ? 'Status' : 'Receipt no.'}</dt><dd>{order.isDraft ? 'Awaiting payment' : order.number}</dd></div>
-        <div><dt>Date</dt><dd><time dateTime={order.createdAt}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(createdAt)}</time></dd></div>
-        <div><dt>Time</dt><dd>{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(createdAt)}</dd></div>
-        {order.customerName && <div><dt>Customer</dt><dd>{order.customerName}</dd></div>}
-      </dl>
-      <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
-      <div className="receipt-lines">{order.items.map((item, index) => <div key={`${item.productId}-${item.size ?? 'one-size'}-${index}`}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)}{item.size && ` · Size ${item.size}`}<span className="receipt-sku">{item.sku}</span></small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
-      <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
-      <div className="receipt-total"><div className="receipt-amount"><span>{order.isDraft ? 'Total due' : 'Total paid'}</span><strong>{money(order.total)}</strong></div>{!order.isDraft && <div className="receipt-payment"><span>Payment method</span><strong>{order.paymentMethod}{order.onlinePayment && ` · ${order.onlinePayment.provider}`}</strong></div>}{!order.isDraft && order.onlinePayment && <small className="receipt-payment-detail">Account: {order.onlinePayment.accountName}<br />Reference: {order.onlinePayment.referenceNumber || 'Receipt photo attached'}</small>}</div>
-      <footer className="receipt-ending">
-        <span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {order.isDraft ? 'Payment pending' : 'Payment received'}</span>
-        <p className="receipt-footer">{settings.receiptFooter}</p>
-        <div className="receipt-barcode" aria-hidden="true"><span /><i /><span /><span /><i /><span /><i /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /></div>
-        <small className="receipt-code">{order.isDraft ? 'UNPAID-PREVIEW' : `GG-${order.number.replace('#', '')}`}</small>
-        <strong>{order.isDraft ? 'UNPAID COPY' : 'THANK YOU FOR SHOPPING WITH US'}</strong>
-      </footer>
-    </article>
-    <p className="receipt-print-hint">{btPrinter?.connected ? `Connected to ${btPrinter.name} — prints directly via Bluetooth without opening the browser print dialog.` : 'For thermal printing, select your printer’s 58 mm or 80 mm paper in the print dialog. Use 100% scale and turn off headers and footers.'}</p>
-    <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => { if (btPrinter?.connected) { onBtPrint() } else { window.print(); onPrinted?.() } }}>{btPrinter?.connected ? <><BluetoothIcon size={16} /> Reprint via BT</> : <><PrinterIcon size={16} /> Print receipt</>}</button></div>
-  </div></div>
-}
+  function ReceiptModal({ order, settings, btPrinter, btPairing, btPrinting, btStatus, onPairBt, onBtPrint, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; btPairing: boolean; btPrinting: boolean; btStatus: string; onPairBt: () => void; onBtPrint: () => void; onPrinted?: () => void; onClose: () => void }) {
+    const createdAt = new Date(order.createdAt)
+    const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
+    const canSkip = Boolean(order.justPaid && !order.successShown)
+    const [needBtPrompt, setNeedBtPrompt] = useState(false)
 
-function TestPrintModal({ settings, btPrinter, btPairing, btStatus, onPairBt, onPairSerial, onBtTestPrint, onManualPrint, onClose }: { settings: Settings; btPrinter: BtPrinterState | null; btPairing: boolean; btStatus: string; onPairBt: () => void; onPairSerial: () => void; onBtTestPrint: (sample: Receipt) => void; onManualPrint: () => void; onClose: () => void }) {
-  const now = new Date()
-  const subtotal = 650
-  const tax = subtotal * (settings.taxRate / 100)
-  const total = subtotal + tax
-  const isAppleTouch = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
-  const hasWebSerial = typeof navigator !== 'undefined' && 'serial' in navigator
-  const hasShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
-  const sampleOrder: Receipt = {
-    id: 'test-print',
-    number: '#TEST-001',
-    createdAt: now.toISOString(),
-    isDraft: true,
-    items: [
-      { productId: 'p-gl01', productName: 'Golden Lions Shirt', sku: 'GG-GL01', quantity: 1, price: 650, size: 'L' },
-    ],
-    subtotal,
-    tax,
-    total,
-    paymentMethod: 'Cash',
-  }
+    useEffect(() => {
+      if (needBtPrompt && btPrinter?.connected) {
+        setNeedBtPrompt(false)
+        onBtPrint()
+      }
+    }, [needBtPrompt, btPrinter?.connected])
 
-  const shareReceipt = async () => {
-    if (!hasShare) return
-    const text = [
-      settings.storeName.toUpperCase(),
-      `Receipt ${sampleOrder.number}`,
-      'Golden Lions Shirt (L) x1 - PHP 650.00',
-      `Total: PHP ${total.toFixed(2)} (Cash)`,
-      settings.receiptFooter,
-    ].join('\n')
-    try {
-      await navigator.share({ title: `${settings.storeName} Receipt`, text })
-    } catch {
-      // User cancelled share sheet
-    }
-  }
-
-  return <div className="modal-backdrop receipt-backdrop">
-    <div className="test-print-modal" role="dialog" aria-modal="true" aria-label="Test Print">
-      <div className="test-print-preview">
-        <article className="receipt-paper test-receipt-paper">
-          <header className="receipt-heading">
-            <img className="receipt-logo-img" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
-            <div className="receipt-banner">
-              <img className="receipt-logo-img screen-logo" src="/icons/gee-logo-white.png" alt="Gee Graphics" />
-              <img className="receipt-logo-img print-logo" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
-              <span className="receipt-tagline">OFFICIAL MERCH · POINT OF SALE</span>
-            </div>
-            <h3 className="receipt-store">{settings.storeName}</h3>
-            <p className="receipt-label">SAMPLE TEST PRINT</p>
-            <div className="receipt-badge-row">
-              <p className="receipt-label">SAMPLE TEST PRINT</p>
-              <span className="receipt-paid-stamp">TEST OK</span>
-            </div>
-          </header>
-          <dl className="receipt-meta">
-            <div><dt>Receipt no.</dt><dd>{sampleOrder.number}</dd></div>
-            <div><dt>Date</dt><dd><time dateTime={sampleOrder.createdAt}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(now)}</time></dd></div>
-            <div><dt>Time</dt><dd>{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(now)}</dd></div>
-          </dl>
-          <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
-          <div className="receipt-lines">
-            {sampleOrder.items.map((item) => <div key={item.productId}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)} · Size {item.size}</small></span><strong>{money(item.price * item.quantity)}</strong></div>)}
-          </div>
-          <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Tax</span><strong>{money(tax)}</strong></div></div>
-          <div className="receipt-total"><div className="receipt-amount"><span>Total</span><strong>{money(total)}</strong></div><div className="receipt-payment"><span>Payment</span><strong>Cash</strong></div></div>
-          <footer className="receipt-ending">
-            <p className="receipt-footer">{settings.receiptFooter}</p>
-            <div className="receipt-barcode" aria-hidden="true"><span /><i /><span /><span /><i /><span /><i /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /></div>
-            <small className="receipt-code">GG-TEST-001</small>
-            <strong>PRINTER ALIGNMENT OK</strong>
-          </footer>
-        </article>
-      </div>
-
-      <div className="test-print-controls">
-        <div className="test-print-head">
-          <div>
-            <h2>Test Print<span className="red-dot">.</span></h2>
-            <span className={cx('printer-badge', btPrinter?.connected && 'connected')}>
-              <i /> {btPrinter?.connected ? btPrinter.name : 'Not connected'}
-            </span>
-          </div>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close test print"><XIcon size={18} /></button>
-        </div>
-
-        <div className="test-print-options">
-          {!isAppleTouch && (
-            <button type="button" className="printer-option-btn bt-option" onClick={onPairBt} disabled={btPairing}>
-              <BluetoothIcon size={18} />
-              <span>{btPairing ? 'Searching...' : 'Pair BT Printer'}</span>
-            </button>
-          )}
-
-          {hasWebSerial && !isAppleTouch && (
-            <button type="button" className="printer-option-btn bt-option" onClick={onPairSerial} disabled={btPairing}>
-              <PrinterIcon size={18} />
-              <span>Pair BT COM / USB</span>
-            </button>
-          )}
-
-          {btPrinter?.connected && (
-            <button type="button" className="printer-option-btn send-bt-option" onClick={() => onBtTestPrint(sampleOrder)}>
-              <CheckIcon size={18} />
-              <span>Send BT Test Print</span>
-            </button>
-          )}
-
-          <button type="button" className="printer-option-btn manual-option" onClick={onManualPrint}>
-            <PrinterIcon size={18} />
-            <span>{isAppleTouch ? 'AirPrint / Manual Print' : 'Manual Print'}</span>
-          </button>
-
-          {isAppleTouch && hasShare && (
-            <button type="button" className="printer-option-btn bt-option" onClick={() => void shareReceipt()}>
-              <SendIcon size={17} />
-              <span>Share to Thermal App</span>
-            </button>
-          )}
-        </div>
-
-        {isAppleTouch && !btStatus && (
-          <div className="bt-status-note">iPad Safari prints via AirPrint or Share to a thermal printer app (Web Bluetooth is disabled by iPadOS).</div>
-        )}
-
-        {btStatus && <div className="bt-status-note">{btStatus}</div>}
-
-        <div className="test-print-footer">
-          {btPrinter?.connected && btPrinter.disconnect && <button type="button" className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}
-          <button type="button" className="ghost-button test-print-cancel" onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  </div>
-}
-
-function CustomerModal({ newCustomer, setNewCustomer, onClose, onSubmit }: { newCustomer: { name: string; email: string; phone: string }; setNewCustomer: (value: { name: string; email: string; phone: string }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <div className="modal-backdrop"><form className="form-modal" onSubmit={onSubmit}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Add to the crew</span><h2>New customer<span className="red-dot">.</span></h2><p>Keep the relationship local, keep the checkout moving.</p><label className="field-label">Name<input autoFocus required value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} placeholder="Full name" /></label><label className="field-label">Email<input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })} placeholder="name@example.com" /></label><label className="field-label">Phone<input type="tel" inputMode="tel" value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} placeholder="(555) 000-0000" /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><UserPlusIcon size={16} /> Save customer</button></div></form></div> }
-
-function ProductModal({ product, onClose, onSave, create = false }: { product?: Product; onClose: () => void; onSave: (patch: Partial<Product>) => void; create?: boolean }) {
-  const [name, setName] = useState(product ? displayProductName(product.name) : '')
-  const [price, setPrice] = useState(product?.price ?? 0)
-  const [sizeStock, setSizeStock] = useState<Record<string, number>>(product?.sizeStock ?? Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0])))
-  return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category: 'shirts', stock: Object.values(sizeStock).reduce((sum, value) => sum + value, 0), price, sizeStock }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}<div className="inventory-size-grid"><strong>Available by size</strong>{SHIRT_SIZES.map((size) => <label key={size}>{size}<input type="number" inputMode="numeric" pattern="[0-9]*" min="0" step="1" value={sizeStock[size] ?? 0} onChange={(event) => setSizeStock({ ...sizeStock, [size]: Number(event.target.value) || 0 })} /></label>)}</div><label className="field-label">Price<input required type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
-}
-
-export default App
-
-
-function OnlinePaymentModal({ methods, details, onClose, onAddMethod, onSave }: { methods: string[]; details?: OnlinePaymentDetails; onClose: () => void; onAddMethod: (method: string) => void; onSave: (details: OnlinePaymentDetails) => void }) {
-  const [provider, setProvider] = useState(details?.provider ?? methods[0] ?? 'GCash')
-  const [accountName, setAccountName] = useState(details?.accountName ?? '')
-  const [referenceNumber, setReferenceNumber] = useState(details?.referenceNumber ?? '')
-  const [receiptImageKey, setReceiptImageKey] = useState(details?.receiptImage ?? '')
-  const [previewUrl, setPreviewUrl] = useState<string>('')
-  const [savingImage, setSavingImage] = useState(false)
-  const [newMethod, setNewMethod] = useState('')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let active = true
-    let createdBlobUrl = ''
-    if (!receiptImageKey) {
-      setPreviewUrl('')
-      return
-    }
-    void loadReceiptImageUrl(receiptImageKey).then((url) => {
-      if (!active) {
-        if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+    const handlePrintClick = () => {
+      if (btPrinter?.connected) {
+        onBtPrint()
         return
       }
-      if (url?.startsWith('blob:')) createdBlobUrl = url
-      setPreviewUrl(url ?? '')
-    })
-    return () => {
-      active = false
-      if (createdBlobUrl) URL.revokeObjectURL(createdBlobUrl)
+      setNeedBtPrompt(true)
+      onPairBt()
     }
-  }, [receiptImageKey])
 
-  const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    setSavingImage(true)
-    setError('')
-    try {
-      const previousKey = receiptImageKey
-      const idbKey = await saveReceiptImage(file)
-      setReceiptImageKey(idbKey)
-      if (previousKey && previousKey !== details?.receiptImage) {
-        void deleteReceiptImage(previousKey)
+    return <div className="modal-backdrop receipt-backdrop"><div className="receipt-modal" role="dialog" aria-modal="true" aria-label={`Receipt ${order.number}`}>
+      <div className="receipt-success"><span><CheckIcon size={15} /> {order.isDraft ? 'Current sale preview' : 'Sale complete'}</span><button onClick={onClose} aria-label="Close receipt"><XIcon size={18} /></button></div>
+      <article className="receipt-paper">
+        <header className="receipt-heading">
+          <img className="receipt-logo-img thermal-logo" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
+          <h3 className="receipt-store">{settings.storeName}</h3>
+          <p className="receipt-label">{order.isDraft ? 'UNPAID · CURRENT SALE' : 'OFFICIAL SALES RECEIPT'}</p>
+        </header>
+        <dl className="receipt-meta">
+          <div><dt>{order.isDraft ? 'Status' : 'Receipt no.'}</dt><dd>{order.isDraft ? 'Awaiting payment' : order.number}</dd></div>
+          <div><dt>Date</dt><dd><time dateTime={order.createdAt}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(createdAt)}</time></dd></div>
+          <div><dt>Time</dt><dd>{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(createdAt)}</dd></div>
+          {order.customerName && <div><dt>Customer</dt><dd>{order.customerName}</dd></div>}
+        </dl>
+        <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
+        <div className="receipt-lines">{order.items.map((item, index) => <div key={`${item.productId}-${item.size ?? 'one-size'}-${index}`}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)}{item.size && ` · Size ${item.size}`}<span className="receipt-sku">{item.sku}</span></small></span><strong>{money(item.price * item.quantity)}</strong></div>)}</div>
+        <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(order.subtotal)}</strong></div><div><span>Tax</span><strong>{money(order.tax)}</strong></div></div>
+        <div className="receipt-total"><div className="receipt-amount"><span>{order.isDraft ? 'Total due' : 'Total paid'}</span><strong>{money(order.total)}</strong></div>{!order.isDraft && <div className="receipt-payment"><span>Payment method</span><strong>{order.paymentMethod}{order.onlinePayment && ` · ${order.onlinePayment.provider}`}</strong></div>}{!order.isDraft && order.onlinePayment && <small className="receipt-payment-detail">Account: {order.onlinePayment.accountName}<br />Reference: {order.onlinePayment.referenceNumber || 'Receipt photo attached'}</small>}</div>
+        <footer className="receipt-ending">
+          <span>{itemCount} {itemCount === 1 ? 'item' : 'items'} · {order.isDraft ? 'Payment pending' : 'Payment received'}</span>
+          <p className="receipt-footer">{settings.receiptFooter}</p>
+          <div className="receipt-barcode" aria-hidden="true"><span /><i /><span /><span /><i /><span /><i /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /></div>
+          <small className="receipt-code">{order.isDraft ? 'UNPAID-PREVIEW' : `GG-${order.number.replace('#', '')}`}</small>
+          <strong>{order.isDraft ? 'UNPAID COPY' : 'THANK YOU FOR SHOPPING WITH US'}</strong>
+        </footer>
+      </article>
+      <p className="receipt-print-hint">{btPrinter?.connected ? `Connected to ${btPrinter.name} — prints directly via Bluetooth.` : 'Connect your Bluetooth thermal printer to print this receipt.'}</p>
+      <div className="modal-actions receipt-modal-actions">
+        {btPrinting ? (
+          <button className="primary-button" disabled><PrinterIcon size={16} /> Printing...</button>
+        ) : order.printedOnce ? (
+          <>
+            <button className="ghost-button" onClick={handlePrintClick}><PrinterIcon size={16} /> Reprint</button>
+            <button className="primary-button" onClick={onClose}><CheckIcon size={16} /> Done printing</button>
+          </>
+        ) : (
+          <>
+            <button className="ghost-button" onClick={onClose}>{canSkip ? 'Skip printing' : 'Close'}</button>
+            {!btPrinter?.connected && <button className="ghost-button" onClick={() => { setNeedBtPrompt(true); onPairBt() }} disabled={btPairing}><BluetoothIcon size={15} /> {btPairing ? 'Searching...' : 'Pair BT Printer'}</button>}
+            <button className="primary-button" onClick={handlePrintClick}>{btPrinter?.connected ? <><BluetoothIcon size={16} /> Print via BT</> : <><PrinterIcon size={16} /> Print receipt</>}</button>
+          </>
+        )}
+      </div>
+      {needBtPrompt && !btPrinter?.connected && (
+        <div className="bt-required-overlay" role="dialog" aria-modal="true" aria-label="Connect BT printer first">
+          <div className="bt-required-card">
+            <div className="bt-required-icon"><BluetoothIcon size={28} /></div>
+            <h3>Connect BT Printer First</h3>
+            <p>{btPairing ? 'Searching for your Bluetooth thermal printer...' : 'No Bluetooth printer is connected yet. Connect your printer to print this receipt.'}</p>
+            {btStatus && <small className="bt-required-status">{btStatus}</small>}
+            <div className="modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setNeedBtPrompt(false)}>Cancel</button>
+              <button type="button" className="primary-button" onClick={onPairBt} disabled={btPairing}>
+                <BluetoothIcon size={16} /> {btPairing ? 'Searching...' : 'Search BT Printer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div></div>
+  }
+
+  function TestPrintModal({ settings, btPrinter, btPairing, btStatus, onPairBt, onPairSerial, onBtTestPrint, onManualPrint, onClose }: { settings: Settings; btPrinter: BtPrinterState | null; btPairing: boolean; btStatus: string; onPairBt: () => void; onPairSerial: () => void; onBtTestPrint: (sample: Receipt) => void; onManualPrint: () => void; onClose: () => void }) {
+    const now = new Date()
+    const subtotal = 650
+    const tax = subtotal * (settings.taxRate / 100)
+    const total = subtotal + tax
+    const isAppleTouch = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+    const hasWebSerial = typeof navigator !== 'undefined' && 'serial' in navigator
+    const hasShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+    const sampleOrder: Receipt = {
+      id: 'test-print',
+      number: '#TEST-001',
+      createdAt: now.toISOString(),
+      isDraft: true,
+      items: [
+        { productId: 'p-gl01', productName: 'Golden Lions Shirt', sku: 'GG-GL01', quantity: 1, price: 650, size: 'L' },
+      ],
+      subtotal,
+      tax,
+      total,
+      paymentMethod: 'Cash',
+    }
+
+    const shareReceipt = async () => {
+      if (!hasShare) return
+      const text = [
+        settings.storeName.toUpperCase(),
+        `Receipt ${sampleOrder.number}`,
+        'Golden Lions Shirt (L) x1 - PHP 650.00',
+        `Total: PHP ${total.toFixed(2)} (Cash)`,
+        settings.receiptFooter,
+      ].join('\n')
+      try {
+        await navigator.share({ title: `${settings.storeName} Receipt`, text })
+      } catch {
+        // User cancelled share sheet
       }
-    } catch {
-      setError('Could not save image locally. Please try again.')
-    } finally {
-      setSavingImage(false)
     }
-  }
 
-  const removeImage = () => {
-    if (receiptImageKey && receiptImageKey !== details?.receiptImage) {
-      void deleteReceiptImage(receiptImageKey)
-    }
-    setReceiptImageKey('')
-    setPreviewUrl('')
-  }
+    return <div className="modal-backdrop receipt-backdrop">
+      <div className="test-print-modal" role="dialog" aria-modal="true" aria-label="Test Print">
+        <div className="test-print-preview">
+          <article className="receipt-paper test-receipt-paper">
+            <header className="receipt-heading">
+              <img className="receipt-logo-img thermal-logo" src="/icons/gee-logo-black.png" alt="Gee Graphics" />
+              <h3 className="receipt-store">{settings.storeName}</h3>
+              <p className="receipt-label">SAMPLE / UNPAID COPY</p>
+            </header>
+            <dl className="receipt-meta">
+              <div><dt>Receipt no.</dt><dd>{sampleOrder.number}</dd></div>
+              <div><dt>Date</dt><dd><time dateTime={sampleOrder.createdAt}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(now)}</time></dd></div>
+              <div><dt>Time</dt><dd>{new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(now)}</dd></div>
+            </dl>
+            <div className="receipt-item-heading"><span>ITEM / QTY</span><span>AMOUNT</span></div>
+            <div className="receipt-lines">
+              {sampleOrder.items.map((item) => <div key={item.productId}><span><b>{item.productName}</b><small>{item.quantity} × {money(item.price)} · Size {item.size}</small></span><strong>{money(item.price * item.quantity)}</strong></div>)}
+            </div>
+            <div className="receipt-breakdown"><div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>Tax</span><strong>{money(tax)}</strong></div></div>
+            <div className="receipt-total"><div className="receipt-amount"><span>Total</span><strong>{money(total)}</strong></div><div className="receipt-payment"><span>Payment</span><strong>Cash</strong></div></div>
+            <footer className="receipt-ending">
+              <p className="receipt-footer">{settings.receiptFooter}</p>
+              <div className="receipt-barcode" aria-hidden="true"><span /><i /><span /><span /><i /><span /><i /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /><i /><span /><span /><i /><span /></div>
+              <small className="receipt-code">GG-TEST-001</small>
+              <strong>PRINTER ALIGNMENT OK</strong>
+            </footer>
+          </article>
+        </div>
 
-  const save = (event: FormEvent) => {
-    event.preventDefault()
-    if (!receiptImageKey && !accountName.trim()) {
-      setError('Upload a receipt image or enter the account name.')
-      return
-    }
-    if (!receiptImageKey && !referenceNumber.trim()) {
-      setError('Upload a receipt image or enter a reference number.')
-      return
-    }
-    onSave({
-      provider,
-      accountName: accountName.trim() || `${provider} receipt`,
-      referenceNumber: referenceNumber.trim(),
-      receiptImage: receiptImageKey || undefined,
-    })
-  }
+        <div className="test-print-controls">
+          <div className="test-print-head">
+            <div>
+              <h2>Test Print<span className="red-dot">.</span></h2>
+              <span className={cx('printer-badge', btPrinter?.connected && 'connected')}>
+                <i /> {btPrinter?.connected ? btPrinter.name : 'Not connected'}
+              </span>
+            </div>
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Close test print"><XIcon size={18} /></button>
+          </div>
 
-  const addMethod = () => {
-    const clean = newMethod.trim()
-    if (!clean) return
-    onAddMethod(clean)
-    setProvider(clean)
-    setNewMethod('')
-  }
+          <div className="test-print-options">
+            {!isAppleTouch && (
+              <button type="button" className="printer-option-btn bt-option" onClick={onPairBt} disabled={btPairing}>
+                <BluetoothIcon size={18} />
+                <span>{btPairing ? 'Searching...' : 'Pair BT Printer'}</span>
+              </button>
+            )}
 
-  return <div className="modal-backdrop"><form className="online-payment-modal" onSubmit={save}>
-    <button type="button" className="modal-close" onClick={onClose} aria-label="Close online payment"><XIcon size={19} /></button>
-    <h2>Online payment<span className="red-dot">.</span></h2>
-    <p>Choose provider and upload the receipt screenshot (saved in IndexedDB) or enter details.</p>
-    <div className="provider-grid">{methods.map((method) => <button type="button" key={method} className={cx('provider-chip', provider === method && 'selected')} onClick={() => setProvider(method)}>{method}<i>{provider === method ? <CheckIcon size={12} /> : null}</i></button>)}</div>
-    <div className="add-provider-row"><input value={newMethod} onChange={(event) => setNewMethod(event.target.value)} placeholder="Add another method" /><button type="button" onClick={addMethod}><PlusIcon size={15} /> Add</button></div>
+            {hasWebSerial && !isAppleTouch && (
+              <button type="button" className="printer-option-btn bt-option" onClick={onPairSerial} disabled={btPairing}>
+                <PrinterIcon size={18} />
+                <span>Pair BT COM / USB</span>
+              </button>
+            )}
 
-    <div className="receipt-upload">
-      <input id="receipt-photo" type="file" accept="image/*" onChange={handleImageUpload} />
-      <label htmlFor="receipt-photo" className={cx('receipt-upload-label', receiptImageKey && 'has-receipt')}>
-        <span className="camera-glyph">{receiptImageKey ? <CheckIcon size={18} /> : <ScanIcon size={18} />}</span>
-        <span>
-          <strong>{savingImage ? 'Saving to IndexedDB...' : receiptImageKey ? 'Receipt image saved locally' : 'Upload receipt image'}</strong>
-          <small>{receiptImageKey ? 'Tap to replace image · stored in IndexedDB' : 'Pick screenshot or photo — no typing needed'}</small>
-        </span>
-        <ArrowRightIcon size={16} />
-      </label>
-      {previewUrl && <div className="receipt-thumb-bar">
-        <img src={previewUrl} alt="Uploaded payment receipt" />
-        <button type="button" className="ghost-button" onClick={removeImage}><TrashIcon size={14} /> Remove</button>
-      </div>}
+            {btPrinter?.connected && (
+              <button type="button" className="printer-option-btn send-bt-option" onClick={() => onBtTestPrint(sampleOrder)}>
+                <CheckIcon size={18} />
+                <span>Send BT Test Print</span>
+              </button>
+            )}
+
+            <button type="button" className="printer-option-btn manual-option" onClick={onManualPrint}>
+              <PrinterIcon size={18} />
+              <span>{isAppleTouch ? 'AirPrint / Manual Print' : 'Manual Print'}</span>
+            </button>
+
+            {isAppleTouch && hasShare && (
+              <button type="button" className="printer-option-btn bt-option" onClick={() => void shareReceipt()}>
+                <SendIcon size={17} />
+                <span>Share to Thermal App</span>
+              </button>
+            )}
+          </div>
+
+          {isAppleTouch && !btStatus && (
+            <div className="bt-status-note">iPad Safari prints via AirPrint or Share to a thermal printer app (Web Bluetooth is disabled by iPadOS).</div>
+          )}
+
+          {btStatus && <div className="bt-status-note">{btStatus}</div>}
+
+          <div className="test-print-footer">
+            {btPrinter?.connected && btPrinter.disconnect && <button type="button" className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}
+            <button type="button" className="ghost-button test-print-cancel" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
+  }
 
-    <div className="online-optional-fields">
-      <label className="field-label">Account name / number <span className="optional-label">{receiptImageKey ? '(optional)' : ''}</span><input inputMode="numeric" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Name shown on the account" /></label>
-      <label className="field-label">Reference number <span className="optional-label">{receiptImageKey ? '(optional)' : ''}</span><input inputMode="numeric" value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder="e.g. GC-2819-7712" /></label>
-    </div>
+  function CustomerModal({ newCustomer, setNewCustomer, onClose, onSubmit }: { newCustomer: { name: string; email: string; phone: string }; setNewCustomer: (value: { name: string; email: string; phone: string }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <div className="modal-backdrop"><form className="form-modal" onSubmit={onSubmit}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Add to the crew</span><h2>New customer<span className="red-dot">.</span></h2><p>Keep the relationship local, keep the checkout moving.</p><label className="field-label">Name<input autoFocus required value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} placeholder="Full name" /></label><label className="field-label">Email<input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })} placeholder="name@example.com" /></label><label className="field-label">Phone<input type="tel" inputMode="tel" value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} placeholder="(555) 000-0000" /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><UserPlusIcon size={16} /> Save customer</button></div></form></div> }
 
-    {error && <div className="form-error">{error}</div>}
-    <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={savingImage}><CheckIcon size={16} /> Save payment</button></div>
-  </form></div>
-}
+  function ProductModal({ product, onClose, onSave, create = false }: { product?: Product; onClose: () => void; onSave: (patch: Partial<Product>) => void; create?: boolean }) {
+    const [name, setName] = useState(product ? displayProductName(product.name) : '')
+    const [price, setPrice] = useState(product?.price ?? 0)
+    const [sizeStock, setSizeStock] = useState<Record<string, number>>(product?.sizeStock ?? Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0])))
+    return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category: 'shirts', stock: Object.values(sizeStock).reduce((sum, value) => sum + value, 0), price, sizeStock }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}<div className="inventory-size-grid"><strong>Available by size</strong>{SHIRT_SIZES.map((size) => <label key={size}>{size}<input type="number" inputMode="numeric" pattern="[0-9]*" min="0" step="1" value={sizeStock[size] ?? 0} onChange={(event) => setSizeStock({ ...sizeStock, [size]: Number(event.target.value) || 0 })} /></label>)}</div><label className="field-label">Price<input required type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
+  }
+
+  export default App
+
+
+  function OnlinePaymentModal({ methods, details, onClose, onAddMethod, onSave }: { methods: string[]; details?: OnlinePaymentDetails; onClose: () => void; onAddMethod: (method: string) => void; onSave: (details: OnlinePaymentDetails) => void }) {
+    const [provider, setProvider] = useState(details?.provider ?? methods[0] ?? 'GCash')
+    const [accountName, setAccountName] = useState(details?.accountName ?? '')
+    const [referenceNumber, setReferenceNumber] = useState(details?.referenceNumber ?? '')
+    const [receiptImageKey, setReceiptImageKey] = useState(details?.receiptImage ?? '')
+    const [previewUrl, setPreviewUrl] = useState<string>('')
+    const [savingImage, setSavingImage] = useState(false)
+    const [newMethod, setNewMethod] = useState('')
+    const [error, setError] = useState('')
+
+    useEffect(() => {
+      let active = true
+      let createdBlobUrl = ''
+      if (!receiptImageKey) {
+        setPreviewUrl('')
+        return
+      }
+      void loadReceiptImageUrl(receiptImageKey).then((url) => {
+        if (!active) {
+          if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
+          return
+        }
+        if (url?.startsWith('blob:')) createdBlobUrl = url
+        setPreviewUrl(url ?? '')
+      })
+      return () => {
+        active = false
+        if (createdBlobUrl) URL.revokeObjectURL(createdBlobUrl)
+      }
+    }, [receiptImageKey])
+
+    const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (!file) return
+      setSavingImage(true)
+      setError('')
+      try {
+        const previousKey = receiptImageKey
+        const idbKey = await saveReceiptImage(file)
+        setReceiptImageKey(idbKey)
+        if (previousKey && previousKey !== details?.receiptImage) {
+          void deleteReceiptImage(previousKey)
+        }
+      } catch {
+        setError('Could not save image locally. Please try again.')
+      } finally {
+        setSavingImage(false)
+      }
+    }
+
+    const removeImage = () => {
+      if (receiptImageKey && receiptImageKey !== details?.receiptImage) {
+        void deleteReceiptImage(receiptImageKey)
+      }
+      setReceiptImageKey('')
+      setPreviewUrl('')
+    }
+
+    const save = (event: FormEvent) => {
+      event.preventDefault()
+      if (!receiptImageKey && !accountName.trim()) {
+        setError('Upload a receipt image or enter the account name.')
+        return
+      }
+      if (!receiptImageKey && !referenceNumber.trim()) {
+        setError('Upload a receipt image or enter a reference number.')
+        return
+      }
+      onSave({
+        provider,
+        accountName: accountName.trim() || `${provider} receipt`,
+        referenceNumber: referenceNumber.trim(),
+        receiptImage: receiptImageKey || undefined,
+      })
+    }
+
+    const addMethod = () => {
+      const clean = newMethod.trim()
+      if (!clean) return
+      onAddMethod(clean)
+      setProvider(clean)
+      setNewMethod('')
+    }
+
+    return <div className="modal-backdrop"><form className="online-payment-modal" onSubmit={save}>
+      <button type="button" className="modal-close" onClick={onClose} aria-label="Close online payment"><XIcon size={19} /></button>
+      <h2>Online payment<span className="red-dot">.</span></h2>
+      <p>Choose provider and upload the receipt screenshot (saved in IndexedDB) or enter details.</p>
+      <div className="provider-grid">{methods.map((method) => <button type="button" key={method} className={cx('provider-chip', provider === method && 'selected')} onClick={() => setProvider(method)}>{method}<i>{provider === method ? <CheckIcon size={12} /> : null}</i></button>)}</div>
+      <div className="add-provider-row"><input value={newMethod} onChange={(event) => setNewMethod(event.target.value)} placeholder="Add another method" /><button type="button" onClick={addMethod}><PlusIcon size={15} /> Add</button></div>
+
+      <div className="receipt-upload">
+        <input id="receipt-photo" type="file" accept="image/*" onChange={handleImageUpload} />
+        <label htmlFor="receipt-photo" className={cx('receipt-upload-label', receiptImageKey && 'has-receipt')}>
+          <span className="camera-glyph">{receiptImageKey ? <CheckIcon size={18} /> : <ScanIcon size={18} />}</span>
+          <span>
+            <strong>{savingImage ? 'Saving to IndexedDB...' : receiptImageKey ? 'Receipt image saved locally' : 'Upload receipt image'}</strong>
+            <small>{receiptImageKey ? 'Tap to replace image · stored in IndexedDB' : 'Pick screenshot or photo — no typing needed'}</small>
+          </span>
+          <ArrowRightIcon size={16} />
+        </label>
+        {previewUrl && <div className="receipt-thumb-bar">
+          <img src={previewUrl} alt="Uploaded payment receipt" />
+          <button type="button" className="ghost-button" onClick={removeImage}><TrashIcon size={14} /> Remove</button>
+        </div>}
+      </div>
+
+      <div className="online-optional-fields">
+        <label className="field-label">Account name / number <span className="optional-label">{receiptImageKey ? '(optional)' : ''}</span><input inputMode="numeric" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Name shown on the account" /></label>
+        <label className="field-label">Reference number <span className="optional-label">{receiptImageKey ? '(optional)' : ''}</span><input inputMode="numeric" value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder="e.g. GC-2819-7712" /></label>
+      </div>
+
+      {error && <div className="form-error">{error}</div>}
+      <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={savingImage}><CheckIcon size={16} /> Save payment</button></div>
+    </form></div>
+  }
 

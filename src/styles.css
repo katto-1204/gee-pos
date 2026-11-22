@@ -6705,3 +6705,530 @@ button,
   text-wrap: nowrap;
   overflow: visible;
 }
+
+/* ==========================================================================
+   TRUE KIOSK-SCALE MODE (Bold, Oversized Touch Controls for Kiosk Tablets)
+   ========================================================================== */
+@media (min-width: 1021px) {
+  .app-shell {
+    grid-template-columns: 134px minmax(0, 1fr) minmax(390px, 450px);
+  }
+  .brand-lockup {
+    width: 110px;
+    height: 66px;
+    margin: 6px 0 18px;
+  }
+  .nav-item,
+  .theme-toggle {
+    min-height: 96px;
+    border-radius: 18px;
+    font-size: 15.5px;
+    font-weight: 700;
+    gap: 9px;
+  }
+  .nav-item svg,
+  .theme-toggle svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Oversized Kiosk Cart / Checkout Rail */
+  .checkout-panel {
+    padding: 24px 24px max(24px, env(safe-area-inset-bottom));
+  }
+  .tab-kicker {
+    font-size: 12px;
+  }
+  .checkout-header h2 {
+    font-size: 26px;
+  }
+  .test-print-pill {
+    padding: 10px 15px;
+    font-size: 13.5px;
+    gap: 8px;
+  }
+  .test-print-pill svg {
+    width: 17px;
+    height: 17px;
+  }
+  .checkout-actions button:not(.test-print-pill) {
+    padding: 8px;
+  }
+  .checkout-actions button:not(.test-print-pill) svg {
+    width: 24px;
+    height: 24px;
+  }
+  .order-items-heading {
+    font-size: 18px;
+    padding: 18px 2px 12px;
+  }
+  .order-items-heading b {
+    min-width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
+  .order-items-heading button {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .cart-item {
+    grid-template-columns: 68px minmax(0, 1fr) auto;
+    min-height: 94px;
+    padding: 12px;
+    gap: 14px;
+    border-radius: 13px;
+  }
+  .cart-item-art {
+    width: 64px;
+    height: 68px;
+    border-radius: 10px;
+  }
+  .cart-jersey-thumb {
+    width: 56px;
+    height: 56px;
+  }
+  .cart-item-copy strong {
+    font-size: 16px;
+  }
+  .cart-item-copy > span {
+    font-size: 12.5px;
+  }
+  .qty-control {
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .qty-control button {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+  }
+  .qty-control button svg {
+    width: 18px;
+    height: 18px;
+  }
+  .qty-control b {
+    font-size: 16px;
+    min-width: 20px;
+  }
+  .cart-item-price strong {
+    font-size: 17px;
+  }
+  .cart-item-price button {
+    padding: 6px;
+  }
+  .cart-item-price button svg {
+    width: 20px;
+    height: 20px;
+  }
+  .empty-cart h3 {
+    font-size: 24px;
+  }
+  .empty-cart p {
+    max-width: 230px;
+    font-size: 14px;
+  }
+  .totals > div {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+  .totals strong {
+    font-size: 16.5px;
+  }
+  .totals .grand-total {
+    font-size: 25px;
+  }
+  .totals .grand-total strong {
+    font-size: 38px;
+  }
+  .payment-title {
+    font-size: 18px;
+  }
+  .payment-method {
+    min-height: 98px;
+    border-radius: 14px;
+    font-size: 17px;
+    font-weight: 700;
+    gap: 10px;
+  }
+  .payment-method svg {
+    width: 30px;
+    height: 30px;
+  }
+  .charge-button {
+    min-height: 76px;
+    border-radius: 15px;
+    font-size: 20px;
+    padding: 0 12px 0 24px;
+  }
+  .charge-arrow {
+    width: 52px;
+    height: 52px;
+    border-radius: 11px;
+  }
+  .charge-arrow svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Oversized Kiosk Modals */
+  .size-modal {
+    width: min(800px, 95vw);
+    padding: 36px;
+    border-radius: 20px;
+  }
+  .size-modal .modal-step {
+    font-size: 13px;
+  }
+  .size-modal h2 {
+    font-size: 44px;
+  }
+  .size-modal > p {
+    font-size: 16px;
+  }
+  .size-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 24px;
+  }
+  .size-option {
+    min-height: 82px;
+    border-radius: 13px;
+    font-size: 22px;
+    padding: 10px;
+  }
+  .size-option small {
+    font-size: 13px;
+    margin-top: 5px;
+  }
+  .size-cancel {
+    margin-top: 22px;
+    min-height: 60px;
+    font-size: 17px;
+    border-radius: 12px;
+  }
+  .online-payment-modal {
+    width: min(660px, 95vw);
+    padding: 32px;
+    border-radius: 20px;
+  }
+  .online-payment-modal h2 {
+    font-size: 38px;
+  }
+  .online-payment-modal > p {
+    font-size: 15px;
+  }
+  .provider-chip {
+    min-height: 60px;
+    padding: 0 16px;
+    border-radius: 12px;
+    font-size: 16px;
+  }
+  .receipt-upload-label {
+    padding: 18px;
+    border-radius: 13px;
+  }
+  .receipt-upload-label strong {
+    font-size: 16px;
+  }
+  .receipt-upload-label small {
+    font-size: 13px;
+  }
+  .field-label {
+    font-size: 13px;
+  }
+  .field-label input,
+  .field-label textarea {
+    padding: 15px 16px;
+    font-size: 17px;
+    border-radius: 11px;
+  }
+  .test-print-modal {
+    width: min(860px, 95vw);
+  }
+  .printer-option-btn {
+    min-height: 64px;
+    font-size: 17px;
+    border-radius: 12px;
+  }
+  .printer-option-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+  .ghost-button,
+  .primary-button,
+  .danger-button {
+    min-height: 52px;
+    padding: 13px 22px;
+    font-size: 15.5px;
+    border-radius: 12px;
+  }
+  .modal-close {
+    padding: 8px;
+  }
+  .modal-close svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Oversized Products & Orders/Reports */
+  .admin-product-card {
+    grid-template-columns: 156px 1fr;
+    min-height: 192px;
+    border-radius: 16px;
+  }
+  .admin-product-color.has-image {
+    min-height: 192px;
+  }
+  .admin-product-color.has-image .product-jersey-img {
+    height: 134px;
+  }
+  .admin-product-info h3 {
+    font-size: 19px;
+  }
+  .admin-product-info p {
+    font-size: 13px;
+  }
+  .admin-product-bottom strong {
+    font-size: 30px;
+  }
+  .stock-badge {
+    font-size: 14px;
+  }
+  .admin-add-button {
+    min-height: 46px;
+    padding: 10px 18px;
+    font-size: 14.5px;
+    border-radius: 10px;
+  }
+  .card-edit {
+    padding: 9px;
+  }
+  .card-edit svg,
+  .card-delete svg {
+    width: 20px;
+    height: 20px;
+  }
+  .card-delete {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+  }
+  .kpi-card strong {
+    font-size: 36px;
+  }
+  .kpi-card span {
+    font-size: 12px;
+  }
+  .kpi-card small {
+    font-size: 13px;
+  }
+  .segmented-tabs button {
+    padding: 11px 18px;
+    font-size: 15px;
+  }
+  .payment-filter-chips button {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+  .view-proof-btn,
+  .view-receipt-btn {
+    padding: 7px 12px;
+    font-size: 12.5px;
+    border-radius: 7px;
+  }
+}
+
+/* Size Modal Available vs. Not Available sections */
+.size-section {
+  margin-top: 18px;
+}
+.size-section-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.size-section .size-grid {
+  margin-top: 0;
+}
+.size-section.unavailable {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.size-section.unavailable .size-section-label {
+  color: #ff7b85;
+}
+.size-option.unavailable {
+  opacity: .42;
+  background: rgba(255, 255, 255, .03);
+  border-style: dashed;
+}
+.light-mode .size-option.unavailable {
+  background: #f6f7f9;
+  color: #8b919e;
+  border-color: rgba(15, 23, 42, .14);
+}
+.size-empty-note {
+  margin-top: 16px;
+  color: #ff7b85;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Authentic Real-World 58mm Thermal Receipt Preview (matches physical MHT-P58D output) */
+.receipt-paper {
+  background: #ffffff;
+  color: #111214;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  border-top: 0;
+}
+.receipt-heading {
+  padding-bottom: 12px;
+  border-bottom: 2px dashed #222;
+}
+.receipt-logo-img.thermal-logo {
+  display: block;
+  width: min(195px, 84%);
+  height: auto;
+  margin: 0 auto 8px;
+  object-fit: contain;
+}
+.receipt-store {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #111214;
+}
+.receipt-label {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  background: transparent;
+  color: #222;
+  border: 0;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+}
+.receipt-meta {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 12px 0;
+}
+.receipt-item-heading {
+  border-bottom: 1.5px dashed #333;
+  color: #111214;
+}
+.receipt-breakdown {
+  border-top: 1.5px dashed #333;
+  color: #111214;
+}
+.receipt-total {
+  background: transparent;
+  color: #111214;
+  border: 0;
+  border-top: 2px dashed #111214;
+  border-bottom: 1.5px dashed #333;
+  border-radius: 0;
+  padding: 12px 0;
+}
+.receipt-total .receipt-amount > span {
+  color: #111214;
+  font-size: 15px;
+  font-weight: 800;
+}
+.receipt-total .receipt-amount > strong {
+  color: #111214;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  font-size: 24px;
+  font-weight: 800;
+}
+.receipt-total .receipt-payment {
+  border-top-color: #bbb;
+}
+.receipt-total .receipt-payment > span,
+.receipt-total .receipt-payment > strong,
+.receipt-total .receipt-payment-detail {
+  color: #111214;
+}
+.receipt-ending {
+  border-top: 0;
+  padding-top: 10px;
+}
+.receipt-ending::after {
+  display: none;
+}
+
+.bt-required-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(6, 7, 10, .74);
+  backdrop-filter: blur(8px);
+}
+.bt-required-card {
+  width: min(380px, 100%);
+  padding: 24px 22px 20px;
+  border-radius: 18px;
+  background: #17181c;
+  border: 1px solid rgba(255, 255, 255, .14);
+  color: #f4f5f7;
+  text-align: center;
+  box-shadow: 0 28px 64px rgba(0, 0, 0, .55);
+}
+.light-mode .bt-required-card {
+  background: #ffffff;
+  color: #111318;
+  border-color: rgba(15, 23, 42, .12);
+}
+.bt-required-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(37, 99, 235, .18);
+  color: #60a5fa;
+}
+.bt-required-card h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.bt-required-card p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a9abb3;
+}
+.light-mode .bt-required-card p {
+  color: #525866;
+}
+.bt-required-status {
+  display: block;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .06);
+  color: #d6d8df;
+  font-size: 12px;
+}
+.light-mode .bt-required-status {
+  background: #f3f4f7;
+  color: #374151;
+}
+.bt-required-card .modal-actions {
+  margin-top: 18px;
+}

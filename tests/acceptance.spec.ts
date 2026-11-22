@@ -6,15 +6,27 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('.product-card')).toHaveCount(9)
 })
 
-test('1. Catalog has 9 jersey shirts (no bandanas), 10 default stock, and loaded front jersey images', async ({ page }) => {
+test('1. Catalog has 9 jersey shirts (no bandanas), XS-2XL 2 each (12 stock), 3XL-5XL in Not available', async ({ page }) => {
   await expect(page.locator('.product-card')).toHaveCount(9)
   await expect(page.locator('.product-card').filter({ hasText: /Bandana/i })).toHaveCount(0)
   const badges = await page.locator('.product-card .stock-count-badge').allTextContents()
-  expect(badges.every((text) => text.trim() === '10 left')).toBe(true)
+  expect(badges.every((text) => text.trim() === '12 left')).toBe(true)
   const imagesLoaded = await page.locator('.product-card img.product-jersey-img').evaluateAll(
     (imgs) => imgs.length === 9 && imgs.every((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0),
   )
   expect(imagesLoaded).toBe(true)
+
+  // Verify XS-2XL are Available (2 each) and 3XL-5XL are in Not available, and selling 2 XS moves XS to Not available
+  await page.locator('.product-card').first().click()
+  const sizeModal = page.getByRole('dialog', { name: 'Choose a size' })
+  await expect(sizeModal.locator('.size-section:not(.unavailable) .size-option')).toHaveCount(6)
+  await expect(sizeModal.locator('.size-section.unavailable .size-option')).toHaveCount(3)
+  await sizeModal.locator('.size-option').filter({ hasText: /^XS/ }).click()
+  await page.locator('.product-card').first().click()
+  await sizeModal.locator('.size-option').filter({ hasText: /^XS/ }).click()
+  await page.locator('.product-card').first().click()
+  await expect(sizeModal.locator('.size-section.unavailable .size-option').filter({ hasText: /^XS/ })).toBeVisible()
+  await sizeModal.getByRole('button', { name: 'Cancel', exact: true }).click()
 })
 
 test('2. Home jersey cards are 3x3 squares with centered names and no SKU or SHIRTS text', async ({ page }) => {
@@ -51,7 +63,7 @@ test('5. Test Print modal shows Gee Graphics logo receipt, Pair BT, Manual Print
   await page.getByRole('button', { name: 'Test Print' }).click()
   const modal = page.getByRole('dialog', { name: 'Test Print' })
   await expect(modal).toBeVisible()
-  await expect(modal.locator('.receipt-logo-img.screen-logo')).toHaveAttribute('src', '/icons/gee-logo-white.png')
+  await expect(modal.locator('.receipt-logo-img.thermal-logo')).toHaveAttribute('src', '/icons/gee-logo-black.png')
   await expect(modal.getByRole('button', { name: /Pair BT Printer/i })).toBeVisible()
   await expect(modal.getByRole('button', { name: /Manual Print/i })).toBeVisible()
   await expect(modal.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
@@ -66,8 +78,17 @@ test('6. Payment Successful waits for Print/Skip without BT, and auto-prints wit
   await page.locator('.charge-button').click()
   const receipt = page.getByRole('dialog', { name: 'Receipt #1029' })
   await expect(receipt).toBeVisible()
+  await expect(receipt.getByRole('button', { name: /Pair BT Printer/i })).toBeVisible()
   await expect(page.getByRole('status', { name: 'Payment successful' })).toHaveCount(0)
-  await receipt.getByRole('button', { name: 'Close', exact: true }).click()
+  // Clicking Print receipt without BT must NOT call window.print() — it opens the Connect BT Printer First modal
+  await page.evaluate(() => { (window as any).__printCallsNoBt = 0; window.print = () => { (window as any).__printCallsNoBt++ } })
+  await receipt.getByRole('button', { name: 'Print receipt', exact: true }).click()
+  const btPrompt = page.getByRole('dialog', { name: 'Connect BT printer first' })
+  await expect(btPrompt).toBeVisible()
+  expect(await page.evaluate(() => (window as any).__printCallsNoBt)).toBe(0)
+  await btPrompt.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(btPrompt).toBeHidden()
+  await receipt.getByRole('button', { name: 'Skip printing', exact: true }).click()
   const success = page.getByRole('status', { name: 'Payment successful' })
   await expect(success).toBeVisible()
   await expect(success).toBeHidden({ timeout: 3500 })
@@ -109,6 +130,13 @@ test('6. Payment Successful waits for Print/Skip without BT, and auto-prints wit
   await page.locator('.charge-button').click()
   await expect.poll(() => page.evaluate(() => (window as any).__btPrinted)).toBe(true)
   expect(await page.evaluate(() => (window as any).__printCalls)).toBe(0)
+  // Stays on ReceiptModal with Reprint + Done printing, no Payment Successful overlay yet
+  const btReceipt = page.getByRole('dialog', { name: 'Receipt #1030' })
+  await expect(btReceipt.getByRole('button', { name: /Reprint/i })).toBeVisible({ timeout: 8000 })
+  await expect(btReceipt.getByRole('button', { name: /Done printing/i })).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Payment successful' })).toHaveCount(0)
+  await btReceipt.getByRole('button', { name: /Done printing/i }).click()
+  await expect(btReceipt).toBeHidden()
   await expect(page.getByRole('status', { name: 'Payment successful' })).toBeVisible()
 })
 
@@ -119,11 +147,10 @@ test('7. Online payment uploads image to IndexedDB, uses numeric inputMode, and 
   await expect(page.getByPlaceholder('Name shown on the account')).toHaveAttribute('inputmode', 'numeric')
   await expect(page.getByPlaceholder('e.g. GC-2819-7712')).toHaveAttribute('inputmode', 'numeric')
 
-  const pngBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64')
-  await page.locator('#receipt-photo').setInputFiles({ name: 'proof.png', mimeType: 'image/png', buffer: pngBytes })
+  await page.locator('#receipt-photo').setInputFiles('public/icons/gee-logo-black.png')
   await page.getByRole('button', { name: 'Save payment', exact: true }).click()
   await page.locator('.charge-button').click()
-  await page.getByRole('dialog', { name: 'Receipt #1029' }).getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Receipt #1029' }).getByRole('button', { name: 'Skip printing', exact: true }).click()
 
   await page.evaluate(() => localStorage.clear())
   await page.reload()
