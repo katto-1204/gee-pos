@@ -232,7 +232,11 @@ test('Online payment uploads receipt image to IndexedDB without typing and allow
   await page.locator('.charge-button').click()
   const receipt = page.getByRole('dialog', { name: 'Receipt #1029' })
   await expect(receipt).toBeVisible()
+  await expect(page.getByRole('status', { name: 'Payment successful' })).toHaveCount(0)
   await receipt.getByRole('button', { name: 'Close', exact: true }).click()
+  const skipSuccess = page.getByRole('status', { name: 'Payment successful' })
+  await expect(skipSuccess).toBeVisible()
+  await expect(skipSuccess).toBeHidden({ timeout: 3500 })
 
   const storedOrder = await page.evaluate(() => JSON.parse(localStorage.getItem('gg-orders-v1')!)[0])
   expect(storedOrder.onlinePayment.receiptImage).toMatch(/^idb:rcpt-/)

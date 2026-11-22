@@ -19,7 +19,7 @@ import {
 
 type Page = 'home' | 'products' | 'orders' | 'customers' | 'reports' | 'settings'
 type CategoryFilter = ProductCategory | 'all'
-type Receipt = Order & { isDraft?: boolean }
+type Receipt = Order & { isDraft?: boolean; justPaid?: boolean; successShown?: boolean }
 type BtPrinterState = {
   name: string
   connected: boolean
@@ -303,6 +303,96 @@ function App() {
     void navigator.storage?.persist?.().catch(() => {})
   }, [])
 
+  // Silently reconnect any previously paired Bluetooth COM / USB Serial or BLE printer on load
+  useEffect(() => {
+    let cancelled = false
+    const autoReconnect = async () => {
+      const serial = (navigator as Navigator & { serial?: { getPorts?: () => Promise<any[]> } }).serial
+      if (serial?.getPorts) {
+        try {
+          const ports = await serial.getPorts()
+          const port = ports[0]
+          if (port && !cancelled) {
+            if (!port.writable) await port.open({ baudRate: 9600 })
+            const sendBytes = async (data: Uint8Array) => {
+              const writer = port.writable.getWriter()
+              try {
+                await writer.write(data)
+              } finally {
+                writer.releaseLock()
+              }
+            }
+            setBtPrinter({
+              name: 'BT / Serial Printer',
+              connected: true,
+              sendBytes,
+              disconnect: () => {
+                void port.close?.().catch(() => {})
+                setBtPrinter(null)
+              },
+            })
+            return
+          }
+        } catch {
+          // Port may be busy or disconnected; user can reconnect manually
+        }
+      }
+
+      const bt = (navigator as Navigator & { bluetooth?: { getDevices?: () => Promise<any[]> } }).bluetooth
+      if (bt?.getDevices) {
+        try {
+          const devices = await bt.getDevices()
+          for (const device of devices) {
+            if (cancelled || !device.gatt) continue
+            try {
+              const server = await device.gatt.connect()
+              const services = typeof server.getPrimaryServices === 'function' ? await server.getPrimaryServices() : []
+              let writeChar: any = null
+              for (const service of services) {
+                if (SYSTEM_GATT_SERVICES.has(String(service.uuid ?? '').toLowerCase())) continue
+                const chars = await service.getCharacteristics()
+                writeChar = chars.find((c: any) => c.properties?.writeWithoutResponse) ?? chars.find((c: any) => c.properties?.write)
+                if (writeChar) break
+              }
+              if (writeChar && !cancelled) {
+                device.addEventListener?.('gattserverdisconnected', () => setBtPrinter(null))
+                const sendBytes = async (data: Uint8Array) => {
+                  for (let offset = 0; offset < data.length; offset += 20) {
+                    const chunk = data.slice(offset, offset + 20)
+                    if (writeChar.properties?.writeWithoutResponse && writeChar.writeValueWithoutResponse) {
+                      await writeChar.writeValueWithoutResponse(chunk)
+                    } else if (writeChar.writeValueWithResponse) {
+                      await writeChar.writeValueWithResponse(chunk)
+                    } else {
+                      await writeChar.writeValue(chunk)
+                    }
+                    await new Promise((resolve) => window.setTimeout(resolve, 15))
+                  }
+                }
+                setBtPrinter({
+                  name: device.name || 'Bluetooth Printer',
+                  connected: true,
+                  sendBytes,
+                  disconnect: () => {
+                    device.gatt?.disconnect?.()
+                    setBtPrinter(null)
+                  },
+                })
+                return
+              }
+            } catch {
+              // Try next remembered device
+            }
+          }
+        } catch {
+          // Ignore if getDevices is unavailable
+        }
+      }
+    }
+    void autoReconnect()
+    return () => { cancelled = true }
+  }, [])
+
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId)
   const cartDetails = useMemo(() => cart.map((line) => {
     const product = products.find((item) => item.id === line.productId)
@@ -322,6 +412,10 @@ function App() {
   const lowStockCount = products.filter((product) => product.stock < 10).length
 
   const notify = (message: string) => setToast(message)
+  const triggerPaymentSuccess = (order: Pick<Order, 'number' | 'total' | 'paymentMethod'>) => {
+    setPaymentSuccess({ number: order.number, total: order.total, method: order.paymentMethod })
+    if (settings.soundEffects) playPaymentSuccessSound()
+  }
   const goTo = (nextPage: Page) => {
     setPage(nextPage)
     setMobileCartOpen(false)
@@ -369,13 +463,18 @@ function App() {
       notify('Add an item before printing the current sale')
       return
     }
-    setReceipt({
+    const draft: Receipt = {
       id: 'current-sale', number: 'Current sale', createdAt: new Date().toISOString(), isDraft: true,
       items: cartDetails.map((line) => ({ productId: line.productId, productName: line.product.name, sku: line.product.sku, quantity: line.quantity, price: line.product.price, size: line.size })),
       subtotal, tax, total, paymentMethod: payment,
       onlinePayment: payment === 'Online' ? onlinePayment : undefined,
       customerName: selectedCustomer?.name,
-    })
+    }
+    if (btPrinter?.connected) {
+      void sendBluetoothReceipt(draft)
+      return
+    }
+    setReceipt(draft)
   }
 
   const chargeCustomer = () => {
@@ -421,13 +520,15 @@ function App() {
       setCustomers((current) => current.map((item) => item.id === customer.id ? { ...item, orders: item.orders + 1, totalSpent: item.totalSpent + total } : item))
     }
     setCart([])
-    setReceipt(order)
     setSelectedCustomerId('')
     setOnlinePayment(undefined)
-    setPaymentSuccess({ number: orderNumber, total, method: payment })
-    if (settings.soundEffects) playPaymentSuccessSound()
     if (btPrinter?.connected) {
-      void sendBluetoothReceipt(order)
+      setReceipt({ ...order, justPaid: true, successShown: true })
+      void sendBluetoothReceipt(order).then(() => {
+        triggerPaymentSuccess(order)
+      })
+    } else {
+      setReceipt({ ...order, justPaid: true, successShown: false })
     }
   }
 
@@ -744,7 +845,25 @@ function App() {
         </div>
       </div>
     )}
-    {receipt && <ReceiptModal order={receipt} settings={settings} btPrinter={btPrinter} onBtPrint={() => sendBluetoothReceipt(receipt)} onClose={() => setReceipt(null)} />}
+    {receipt && (
+      <ReceiptModal
+        order={receipt}
+        settings={settings}
+        btPrinter={btPrinter}
+        onBtPrint={() => void sendBluetoothReceipt(receipt)}
+        onPrinted={() => {
+          if (receipt.justPaid && !receipt.successShown) {
+            setReceipt((current) => current ? { ...current, successShown: true } : null)
+            triggerPaymentSuccess(receipt)
+          }
+        }}
+        onClose={() => {
+          const pending = receipt.justPaid && !receipt.successShown ? receipt : null
+          setReceipt(null)
+          if (pending) triggerPaymentSuccess(pending)
+        }}
+      />
+    )}
     {showTestPrint && <TestPrintModal settings={settings} btPrinter={btPrinter} btPairing={btPairing} btStatus={btStatus} onPairBt={pairBluetoothPrinter} onPairSerial={pairSerialPrinter} onBtTestPrint={(sample) => sendBluetoothReceipt(sample)} onManualPrint={() => window.print()} onClose={() => setShowTestPrint(false)} />}
     {sizeProduct && <SizeModal product={sizeProduct} cart={cart} onClose={() => setSizeProduct(null)} onChoose={(size) => addToCart(sizeProduct.id, size)} />}
     {showOnlinePayment && <OnlinePaymentModal methods={paymentMethods} details={onlinePayment} onClose={() => { setShowOnlinePayment(false); if (!onlinePayment) setPayment('Cash') }} onAddMethod={(method) => setPaymentMethods((current) => current.includes(method) ? current : [...current, method])} onSave={(details) => { setOnlinePayment(details); setPayment('Online'); setShowOnlinePayment(false); notify(`${details.provider} payment details saved`) }} />}
@@ -1086,7 +1205,7 @@ function PaymentBar({ label, value, total, color, icon }: { label: string; value
 
 function ToggleRow({ label, description, value, onChange }: { label: string; description: string; value: boolean; onChange: (value: boolean) => void }) { return <div className="toggle-row"><div><strong>{label}</strong><p>{description}</p></div><button className={cx('toggle', value && 'on')} onClick={() => onChange(!value)} aria-label={`Toggle ${label}`}><i /></button></div> }
 
-function ReceiptModal({ order, settings, btPrinter, onBtPrint, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; onBtPrint: () => void; onClose: () => void }) {
+function ReceiptModal({ order, settings, btPrinter, onBtPrint, onPrinted, onClose }: { order: Receipt; settings: Settings; btPrinter: BtPrinterState | null; onBtPrint: () => void; onPrinted?: () => void; onClose: () => void }) {
   const createdAt = new Date(order.createdAt)
   const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
   return <div className="modal-backdrop receipt-backdrop"><div className="receipt-modal" role="dialog" aria-modal="true" aria-label={`Receipt ${order.number}`}>
@@ -1116,7 +1235,7 @@ function ReceiptModal({ order, settings, btPrinter, onBtPrint, onClose }: { orde
       </footer>
     </article>
     <p className="receipt-print-hint">{btPrinter?.connected ? `Connected to ${btPrinter.name} — prints directly via Bluetooth without opening the browser print dialog.` : 'For thermal printing, select your printer’s 58 mm or 80 mm paper in the print dialog. Use 100% scale and turn off headers and footers.'}</p>
-    <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => btPrinter?.connected ? onBtPrint() : window.print()}>{btPrinter?.connected ? <><BluetoothIcon size={16} /> Reprint via BT</> : <><PrinterIcon size={16} /> Print receipt</>}</button></div>
+    <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Close</button><button className="primary-button" onClick={() => { if (btPrinter?.connected) { onBtPrint() } else { window.print(); onPrinted?.() } }}>{btPrinter?.connected ? <><BluetoothIcon size={16} /> Reprint via BT</> : <><PrinterIcon size={16} /> Print receipt</>}</button></div>
   </div></div>
 }
 
