@@ -203,7 +203,7 @@ test('Test Print modal shows sample receipt, Pair BT Printer, Manual Print, and 
   expect(await page.evaluate(() => (window as any).__btRequested)).toBe(true)
   await expect(modal).toContainText('MPT-II Thermal')
   await modal.getByRole('button', { name: /Send BT Test Print/i }).click()
-  expect(await page.evaluate(() => (window as any).__btPrinted)).toBe(true)
+  await expect.poll(() => page.evaluate(() => (window as any).__btPrinted)).toBe(true)
 
   await modal.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(modal).toBeHidden()
