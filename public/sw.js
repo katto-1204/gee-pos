@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gee-pos-shell-v8'
+const CACHE_NAME = 'gee-pos-shell-v9'
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',

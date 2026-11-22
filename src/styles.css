@@ -7275,3 +7275,63 @@ button,
 .light-mode .bt-connected-banner p {
   color: #344054;
 }
+
+.admin-product-card {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.delete-product-icon {
+  background: rgba(239, 27, 45, .16);
+  color: #ff4d5a;
+}
+
+.product-image-field {
+  margin-top: 12px;
+}
+.product-image-field .field-caption {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a9abb3;
+  margin-bottom: 8px;
+}
+.light-mode .product-image-field .field-caption {
+  color: #4b5563;
+}
+.product-image-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.product-image-preview {
+  width: 72px;
+  height: 72px;
+  flex: none;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .04);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 6px;
+}
+.light-mode .product-image-preview {
+  border-color: rgba(15, 23, 42, .16);
+  background: #f3f4f7;
+}
+.product-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.product-image-preview span {
+  font-size: 11px;
+  color: #7c808b;
+  text-align: center;
+}
+.product-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

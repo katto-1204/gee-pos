@@ -202,7 +202,7 @@ async function buildEscPosReceipt(order: Receipt, settings: Settings): Promise<U
 }
 
 const STORAGE = {
-  products: 'gg-products-v3',
+  products: 'gg-products-v4',
   cart: 'gg-cart-v1',
   customers: 'gg-customers-v1',
   orders: 'gg-orders-v1',
@@ -346,8 +346,10 @@ function App() {
           return normalizeProductStock({ ...redDragonSeed, stock: product.stock, sizeStock: product.sizeStock, price: product.price })
         }
         const seed = seedById.get(product.id)
-        const synced = seed && (product.image !== seed.image || product.accent !== seed.accent || product.accent2 !== seed.accent2)
-          ? { ...product, image: seed.image, accent: seed.accent, accent2: seed.accent2 }
+        const keepCustomImage = Boolean(product.image?.startsWith('data:'))
+        const nextImage = keepCustomImage ? product.image : seed?.image ?? product.image
+        const synced = seed && (product.image !== nextImage || product.accent !== seed.accent || product.accent2 !== seed.accent2)
+          ? { ...product, image: nextImage, accent: seed.accent, accent2: seed.accent2 }
           : product
         return normalizeProductStock(synced)
       })
@@ -659,11 +661,16 @@ function App() {
   }
 
   const resetInventory = () => {
-    if (!window.confirm('Reset all jersey stock back to default (XS–2XL: 2 each, 3XL–5XL: 0)?')) return
-    setProducts(seedProducts.map((product) => ({ ...product, sizeStock: product.sizeStock ? { ...product.sizeStock } : undefined })))
+    if (!window.confirm('Reset all jersey inventory back to 0?')) return
+    const zeroSizes = Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0]))
+    setProducts((current) => current.map((product) => ({
+      ...product,
+      stock: 0,
+      sizeStock: product.category === 'shirts' ? { ...zeroSizes } : product.sizeStock,
+    })))
     setCart([])
-    recordAudit('Inventory reset', 'All 9 jerseys reset to default size stock (XS–2XL: 2 each, 3XL–5XL: 0)')
-    notify('Inventory reset to default')
+    recordAudit('Inventory reset', 'All jersey inventory reset to 0')
+    notify('Inventory reset to 0')
   }
 
   const clearRecords = () => {
@@ -731,7 +738,6 @@ function App() {
   }
 
   const deleteProduct = (product: Product) => {
-    if (!window.confirm(`Delete ${product.name}? This cannot be undone.`)) return
     setProducts((current) => current.filter((item) => item.id !== product.id))
     setCart((current) => current.filter((line) => line.productId !== product.id))
     notify(`${product.name} deleted`)
@@ -942,7 +948,7 @@ function App() {
 
     <main className="main-column">
       {page === 'home' && <DashboardPage products={products} setCategory={setCategory} addToCart={addToCart} goTo={goTo} />}
-      {page === 'products' && <ProductsPage products={products} orders={orders} addToCart={addToCart} onEdit={setEditingProduct} onCreate={() => setCreatingProduct(true)} onDelete={deleteProduct} />}
+      {page === 'products' && <ProductsPage products={products} orders={orders} addToCart={addToCart} onEdit={setEditingProduct} onCreate={() => setCreatingProduct(true)} onDelete={deleteProduct} onResetInventory={resetInventory} />}
       {page === 'orders' && <OrdersPage orders={orders} products={products} auditLogs={auditLogs} onOpenReceipt={(order) => setReceipt(order)} />}
       {page === 'settings' && <SettingsPage settings={settings} updateSettings={updateSettings} onResetInventory={resetInventory} onClearRecords={clearRecords} onExport={exportData} onImport={() => importInput.current?.click()} btPrinter={btPrinter} onOpenTestPrint={() => { setBtStatus(''); setShowTestPrint(true) }} />}
     </main>
@@ -1003,7 +1009,9 @@ function App() {
       const product: Product = {
         id, sku: `GG-SH${Date.now().toString().slice(-4)}`,
         name, category: 'shirts', kind: 'shirt',
-        price: patch.price ?? 0, stock: patch.stock ?? 0, accent: patch.accent ?? '#ef1b2d', accent2: '#17181b',
+        price: patch.price ?? 0, stock: patch.stock ?? 0, sizeStock: patch.sizeStock,
+        image: patch.image,
+        accent: patch.accent ?? '#ef1b2d', accent2: '#17181b',
         description: `${name} jersey.`,
       }
       setProducts((current) => [product, ...current])
@@ -1029,8 +1037,95 @@ function DashboardPage({ products, setCategory, addToCart, goTo }: { products: P
   </div>
 }
 
-function ProductsPage({ products, orders, addToCart, onEdit, onCreate, onDelete }: { products: Product[]; orders: Order[]; addToCart: (id: string) => void; onEdit: (product: Product) => void; onCreate: () => void; onDelete: (product: Product) => void }) {
-  return <div className="page-content listing-page"><PageIntro title="Products" description="Update prices and stock here. Use Home to make a sale." action={<div className="page-actions"><button className="ghost-button" type="button"><PackageIcon size={16} /> {products.length} SKUs</button><button className="primary-button compact" onClick={onCreate}><PlusIcon size={16} /> Add product</button></div>} /><div className="product-admin-grid">{products.map((product) => { const latestSale = orders.flatMap((order) => order.items.map((item) => ({ order, item }))).filter(({ item }) => item.productId === product.id).sort((a, b) => new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime())[0]; return <article className="admin-product-card" key={product.id}><ProductColorBlock product={product} admin /><div className="admin-product-info"><span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span><h3>{displayProductName(product.name)}</h3><p>{product.sku}</p><div className="admin-product-bottom"><strong>{money(product.price)}</strong><span className={cx('stock-badge', product.stock < 10 && 'low')}>{product.stock} in stock</span></div>{latestSale ? <div className="latest-sale"><span>Latest sale</span><strong>−{latestSale.item.quantity}{latestSale.item.size ? ` · ${latestSale.item.size}` : ''}</strong><small>{dateTime(latestSale.order.createdAt)} · {latestSale.order.number}</small></div> : <div className="latest-sale empty"><span>Latest sale</span><small>No sales yet</small></div>}<button className="admin-add-button" onClick={() => addToCart(product.id)}><PlusIcon size={14} /> Add to sale</button></div><button className="card-edit" onClick={() => onEdit(product)} aria-label={`Edit ${product.name}`}><EditIcon size={16} /></button><button className="card-delete" onClick={() => onDelete(product)} aria-label={`Delete ${product.name}`}><TrashIcon size={16} /></button></article> })}</div></div>
+function ProductsPage({ products, orders, addToCart, onEdit, onCreate, onDelete, onResetInventory }: { products: Product[]; orders: Order[]; addToCart: (id: string) => void; onEdit: (product: Product) => void; onCreate: () => void; onDelete: (product: Product) => void; onResetInventory: () => void }) {
+  const [pendingDelete, setPendingDelete] = useState<Product | null>(null)
+  const holdTimer = useRef<number | null>(null)
+  const holdOrigin = useRef<{ x: number; y: number } | null>(null)
+  const didLongPress = useRef(false)
+
+  const clearHold = () => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current)
+      holdTimer.current = null
+    }
+    holdOrigin.current = null
+  }
+
+  useEffect(() => () => clearHold(), [])
+
+  const startHold = (product: Product, event: React.PointerEvent) => {
+    if (event.button !== 0 && event.pointerType === 'mouse') return
+    clearHold()
+    didLongPress.current = false
+    holdOrigin.current = { x: event.clientX, y: event.clientY }
+    holdTimer.current = window.setTimeout(() => {
+      didLongPress.current = true
+      holdTimer.current = null
+      setPendingDelete(product)
+    }, 600)
+  }
+
+  const moveHold = (event: React.PointerEvent) => {
+    if (!holdOrigin.current) return
+    if (Math.hypot(event.clientX - holdOrigin.current.x, event.clientY - holdOrigin.current.y) > 10) {
+      clearHold()
+    }
+  }
+
+  return <div className="page-content listing-page">
+    <PageIntro title="Products" description="Update prices and stock here. Hold any product card to delete." action={<div className="page-actions"><button className="ghost-button" type="button" onClick={onResetInventory}><PackageIcon size={16} /> Reset inventory</button><button className="primary-button compact" onClick={onCreate}><PlusIcon size={16} /> Add product</button></div>} />
+    <div className="product-admin-grid">
+      {products.map((product) => {
+        const latestSale = orders.flatMap((order) => order.items.map((item) => ({ order, item }))).filter(({ item }) => item.productId === product.id).sort((a, b) => new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime())[0]
+        return (
+          <article
+            className="admin-product-card"
+            key={product.id}
+            onPointerDown={(event) => startHold(product, event)}
+            onPointerMove={moveHold}
+            onPointerUp={clearHold}
+            onPointerLeave={clearHold}
+            onPointerCancel={clearHold}
+            onContextMenu={(event) => { event.preventDefault(); clearHold(); setPendingDelete(product) }}
+            onClickCapture={(event) => {
+              if (didLongPress.current) {
+                didLongPress.current = false
+                event.preventDefault()
+                event.stopPropagation()
+              }
+            }}
+          >
+            <ProductColorBlock product={product} admin />
+            <div className="admin-product-info">
+              <span className="product-category-tag">{CATEGORY_LABELS[product.category]}</span>
+              <h3>{displayProductName(product.name)}</h3>
+              <p>{product.sku}</p>
+              <div className="admin-product-bottom">
+                <strong>{money(product.price)}</strong>
+                <span className={cx('stock-badge', product.stock < 10 && 'low')}>{product.stock} in stock</span>
+              </div>
+              {latestSale ? <div className="latest-sale"><span>Latest sale</span><strong>−{latestSale.item.quantity}{latestSale.item.size ? ` · ${latestSale.item.size}` : ''}</strong><small>{dateTime(latestSale.order.createdAt)} · {latestSale.order.number}</small></div> : <div className="latest-sale empty"><span>Latest sale</span><small>No sales yet</small></div>}
+              <button className="admin-add-button" onClick={() => addToCart(product.id)}><PlusIcon size={14} /> Add to sale</button>
+            </div>
+            <button className="card-edit" onClick={() => onEdit(product)} aria-label={`Edit ${product.name}`}><EditIcon size={16} /></button>
+          </article>
+        )
+      })}
+    </div>
+    {pendingDelete && (
+      <div className="bt-required-overlay" role="dialog" aria-modal="true" aria-label="Delete product">
+        <div className="bt-required-card">
+          <div className="bt-required-icon delete-product-icon"><TrashIcon size={26} /></div>
+          <h3>Delete product?</h3>
+          <p>Remove <strong>{displayProductName(pendingDelete.name)}</strong> ({pendingDelete.sku}) from your catalog? This cannot be undone.</p>
+          <div className="modal-actions">
+            <button type="button" className="ghost-button" onClick={() => setPendingDelete(null)}>Cancel</button>
+            <button type="button" className="danger-button" onClick={() => { onDelete(pendingDelete); setPendingDelete(null) }}>Delete product</button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
 }
 
 function OrdersPage({ orders, products, auditLogs, onOpenReceipt }: { orders: Order[]; products: Product[]; auditLogs: AuditLog[]; onOpenReceipt: (order: Order) => void }) {
@@ -1228,7 +1323,7 @@ function ReportsPage({ orders, products }: { orders: Order[]; products: Product[
 }
 
 function SettingsPage({ settings, updateSettings, onResetInventory, onClearRecords, onExport, onImport, btPrinter, onOpenTestPrint }: { settings: Settings; updateSettings: (patch: Partial<Settings>) => void; onResetInventory: () => void; onClearRecords: () => void; onExport: () => void; onImport: () => void; btPrinter: BtPrinterState | null; onOpenTestPrint: () => void }) {
-  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" inputMode="decimal" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Light mode" description="Use a brighter theme for daytime work." value={settings.lightMode} onChange={(value) => updateSettings({ lightMode: value })} /><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card"><div className="panel-heading"><div><h3>Receipt printer</h3></div><PrinterIcon size={19} /></div><p className="printer-summary">{btPrinter?.connected ? `Connected to ${btPrinter.name}.` : 'No Bluetooth printer connected. Pair a nearby Bluetooth thermal printer or run a manual test print.'}</p><div className="danger-actions"><button className="primary-button" onClick={onOpenTestPrint}><PrinterIcon size={15} /> {btPrinter?.connected ? 'Printer & Test Print' : 'Test Print'}</button>{btPrinter?.connected && btPrinter.disconnect && <button className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}</div></section><section className="settings-card"><div className="panel-heading"><div><h3>Backup data</h3></div><DownloadIcon size={19} /></div><p>Export all transactions, products, customers, settings, and audit history to a JSON file. Import it later to restore this POS.</p><div className="danger-actions"><button className="primary-button" onClick={onExport}>Export JSON</button><button className="ghost-button" onClick={onImport}>Import JSON</button></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Reset jersey inventory to default (XS–2XL: 2 each, 3XL–5XL: 0) or clear sales records.</p><div className="danger-actions"><button className="ghost-button" onClick={onResetInventory}>Reset inventory</button><button className="danger-button" onClick={onClearRecords}>Clear sales records</button></div></section></div></div>
+  return <div className="page-content listing-page settings-page"><PageIntro title="Settings" description="Preferences and local data controls." /><div className="settings-grid"><section className="settings-card"><div className="panel-heading"><div><h3>Identity & receipts</h3></div><SparkIcon size={19} /></div><label className="field-label">Store name<input value={settings.storeName} onChange={(event) => updateSettings({ storeName: event.target.value })} /></label><label className="field-label">Tax rate <span className="input-suffix"><input type="number" inputMode="decimal" min="0" max="30" step="0.1" value={settings.taxRate} onChange={(event) => updateSettings({ taxRate: Number(event.target.value) || 0 })} /> %</span></label><label className="field-label">Receipt footer<textarea rows={3} value={settings.receiptFooter} onChange={(event) => updateSettings({ receiptFooter: event.target.value })} /></label></section><section className="settings-card"><div className="panel-heading"><div><h3>POS preferences</h3></div><SettingsIcon size={19} /></div><ToggleRow label="Light mode" description="Use a brighter theme for daytime work." value={settings.lightMode} onChange={(value) => updateSettings({ lightMode: value })} /><ToggleRow label="Sound effects" description="Play short feedback cues while selling." value={settings.soundEffects} onChange={(value) => updateSettings({ soundEffects: value })} /><ToggleRow label="Compact mode" description="Fit more products on smaller screens." value={settings.compactMode} onChange={(value) => updateSettings({ compactMode: value })} /><div className="settings-note"><WalletIcon size={18} /><div><strong>Local-only mode</strong><p>Orders, catalog, payment methods and settings are saved in localStorage on this device.</p></div></div></section><section className="settings-card"><div className="panel-heading"><div><h3>Receipt printer</h3></div><PrinterIcon size={19} /></div><p className="printer-summary">{btPrinter?.connected ? `Connected to ${btPrinter.name}.` : 'No Bluetooth printer connected. Pair a nearby Bluetooth thermal printer or run a manual test print.'}</p><div className="danger-actions"><button className="primary-button" onClick={onOpenTestPrint}><PrinterIcon size={15} /> {btPrinter?.connected ? 'Printer & Test Print' : 'Test Print'}</button>{btPrinter?.connected && btPrinter.disconnect && <button className="ghost-button" onClick={btPrinter.disconnect}>Disconnect</button>}</div></section><section className="settings-card"><div className="panel-heading"><div><h3>Backup data</h3></div><DownloadIcon size={19} /></div><p>Export all transactions, products, customers, settings, and audit history to a JSON file. Import it later to restore this POS.</p><div className="danger-actions"><button className="primary-button" onClick={onExport}>Export JSON</button><button className="ghost-button" onClick={onImport}>Import JSON</button></div></section><section className="settings-card danger-zone"><div className="panel-heading"><div><h3>Local data</h3></div><TrashIcon size={19} /></div><p>Reset all jersey inventory back to 0 or clear sales records.</p><div className="danger-actions"><button className="ghost-button" onClick={onResetInventory}>Reset inventory</button><button className="danger-button" onClick={onClearRecords}>Clear sales records</button></div></section></div></div>
 }
 
 function PageIntro({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description: string; action?: ReactNode }) {
@@ -1613,11 +1708,89 @@ function TestPrintModal({ settings, btPrinter, btPairing, btStatus, onPairBt, on
 
 function CustomerModal({ newCustomer, setNewCustomer, onClose, onSubmit }: { newCustomer: { name: string; email: string; phone: string }; setNewCustomer: (value: { name: string; email: string; phone: string }) => void; onClose: () => void; onSubmit: (event: FormEvent) => void }) { return <div className="modal-backdrop"><form className="form-modal" onSubmit={onSubmit}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><span className="eyebrow">Add to the crew</span><h2>New customer<span className="red-dot">.</span></h2><p>Keep the relationship local, keep the checkout moving.</p><label className="field-label">Name<input autoFocus required value={newCustomer.name} onChange={(event) => setNewCustomer({ ...newCustomer, name: event.target.value })} placeholder="Full name" /></label><label className="field-label">Email<input type="email" value={newCustomer.email} onChange={(event) => setNewCustomer({ ...newCustomer, email: event.target.value })} placeholder="name@example.com" /></label><label className="field-label">Phone<input type="tel" inputMode="tel" value={newCustomer.phone} onChange={(event) => setNewCustomer({ ...newCustomer, phone: event.target.value })} placeholder="(555) 000-0000" /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><UserPlusIcon size={16} /> Save customer</button></div></form></div> }
 
+function compressProductImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read image'))
+    reader.onload = () => {
+      const src = typeof reader.result === 'string' ? reader.result : ''
+      const img = new Image()
+      img.onerror = () => reject(new Error('Invalid image file'))
+      img.onload = () => {
+        const maxSide = 512
+        const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1))
+        const width = Math.max(1, Math.round(img.naturalWidth * scale))
+        const height = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(src)
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        const mime = file.type === 'image/png' ? 'image/png' : 'image/webp'
+        resolve(canvas.toDataURL(mime, 0.86))
+      }
+      img.src = src
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 function ProductModal({ product, onClose, onSave, create = false }: { product?: Product; onClose: () => void; onSave: (patch: Partial<Product>) => void; create?: boolean }) {
   const [name, setName] = useState(product ? displayProductName(product.name) : '')
-  const [price, setPrice] = useState(product?.price ?? 0)
+  const [price, setPrice] = useState(product?.price ?? 650)
+  const [image, setImage] = useState<string>(product?.image ?? '')
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [sizeStock, setSizeStock] = useState<Record<string, number>>(product?.sizeStock ?? Object.fromEntries(SHIRT_SIZES.map((size) => [size, 0])))
-  return <div className="modal-backdrop"><form className="form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category: 'shirts', stock: Object.values(sizeStock).reduce((sum, value) => sum + value, 0), price, sizeStock }) }}><button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button><h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>{product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}{create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}<div className="inventory-size-grid"><strong>Available by size</strong>{SHIRT_SIZES.map((size) => <label key={size}>{size}<input type="number" inputMode="numeric" pattern="[0-9]*" min="0" step="1" value={sizeStock[size] ?? 0} onChange={(event) => setSizeStock({ ...sizeStock, [size]: Number(event.target.value) || 0 })} /></label>)}</div><label className="field-label">Price<input required type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label><div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button></div></form></div>
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const handleImagePick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const dataUrl = await compressProductImage(file)
+      setImage(dataUrl)
+    } catch {
+      // Ignore invalid image files
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  return <div className="modal-backdrop">
+    <form className="form-modal product-form-modal" onSubmit={(event) => { event.preventDefault(); onSave({ name: name.trim(), category: 'shirts', stock: Object.values(sizeStock).reduce((sum, value) => sum + value, 0), price, sizeStock, image: image || undefined }) }}>
+      <button type="button" className="modal-close" onClick={onClose}><XIcon size={19} /></button>
+      <h2>{create ? 'Add product' : displayProductName(product?.name ?? '')}</h2>
+      {product && <p>{product.sku} · {CATEGORY_LABELS[product.category]}</p>}
+      {create && <label className="field-label">Name<input required autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Golden Lions" /></label>}
+      <div className="product-image-field">
+        <span className="field-caption">Product image</span>
+        <div className="product-image-upload-row">
+          <div className="product-image-preview">
+            {image ? <img src={image} alt={name || 'Product preview'} /> : <span>No image</span>}
+          </div>
+          <div className="product-image-actions">
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => void handleImagePick(event)} />
+            <button type="button" className="ghost-button" onClick={() => fileRef.current?.click()} disabled={uploadingImage}>
+              {uploadingImage ? 'Loading...' : image ? 'Change image' : 'Upload image'}
+            </button>
+            {image && <button type="button" className="ghost-button" onClick={() => setImage('')}>Remove</button>}
+          </div>
+        </div>
+      </div>
+      <div className="inventory-size-grid"><strong>Available by size</strong>{SHIRT_SIZES.map((size) => <label key={size}>{size}<input type="number" inputMode="numeric" pattern="[0-9]*" min="0" step="1" value={sizeStock[size] ?? 0} onChange={(event) => setSizeStock({ ...sizeStock, [size]: Number(event.target.value) || 0 })} /></label>)}</div>
+      <label className="field-label">Price<input required type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(Number(event.target.value))} /></label>
+      <div className="modal-actions">
+        <button type="button" className="ghost-button" onClick={onClose}>Cancel</button>
+        <button type="submit" className="primary-button"><CheckIcon size={16} /> {create ? 'Add product' : 'Save changes'}</button>
+      </div>
+    </form>
+  </div>
 }
 
 export default App
